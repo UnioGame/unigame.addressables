@@ -39,7 +39,7 @@ namespace UniGame.AddressableTools.Editor
         
         #endregion
         
-        private LifeTimeDefinition _lifeTime = new LifeTimeDefinition();
+        private LifeTime _lifeTime = new LifeTime();
         
         public bool IsPlaying => EditorApplication.isPlaying;
         
