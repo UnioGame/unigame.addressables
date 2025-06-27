@@ -20,13 +20,14 @@
         where TApi : class
     {
         private TAddressable _reference;
-        private LifeTimeDefinition _lifeTime;
+        private LifeTime _lifeTime;
         private ReactiveValue<TApi> _addressableObservable;
 
         public AddressableObservable(TAddressable addressable)
         {
-            _lifeTime = new LifeTimeDefinition();
-            _addressableObservable = new ReactiveValue<TApi>().AddTo(_lifeTime);
+            _lifeTime = new LifeTime();
+            _addressableObservable = new ReactiveValue<TApi>();
+            _lifeTime.AddDispose(_addressableObservable);
             _reference = addressable;
         }
         
