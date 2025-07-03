@@ -12,7 +12,7 @@ namespace UniGame.AddressableAtlases
     using System.Collections.Generic;
     using System.Diagnostics;
     using System.Reflection;
-    using Runtime;
+    using AddressableAtlases;
     using Cysharp.Threading.Tasks;
     
     using UniGame.Runtime.DataFlow;

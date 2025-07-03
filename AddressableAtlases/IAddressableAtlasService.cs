@@ -1,6 +1,6 @@
 ﻿using UniGame.GameFlow.Runtime;
 
-namespace UniGame.AddressableAtlases.Runtime
+namespace UniGame.AddressableAtlases
 {
     using Cysharp.Threading.Tasks;
     using UnityEngine.U2D;

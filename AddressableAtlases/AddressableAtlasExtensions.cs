@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace UniGame.AddressableAtlases
 {
-    using Runtime;
+    using AddressableAtlases;
     using global::UniGame.Core.Runtime;
 
     public static class AddressableAtlasExtensions
