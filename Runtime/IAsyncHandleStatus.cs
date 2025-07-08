@@ -2,7 +2,7 @@
 using UniGame.Core.Runtime.ObjectPool;
 using UnityEngine.ResourceManagement.AsyncOperations;
 
-namespace UniGame.Context.Runtime
+namespace UniGame.AddressableTools.Runtime
 {
     public interface IAsyncHandleStatus : IObservable<IAsyncHandleStatus>
     {

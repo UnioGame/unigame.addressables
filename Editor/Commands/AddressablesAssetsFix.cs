@@ -3,7 +3,6 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using UniModules.Editor;
-using UniGame.AddressableTools.Editor;
 using UnityEditor;
 using UnityEditor.AddressableAssets;
 using UnityEditor.AddressableAssets.Settings;

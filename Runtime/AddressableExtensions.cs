@@ -1,6 +1,4 @@
-﻿using UniGame.Context.Runtime;
-
-namespace UniGame.AddressableTools.Runtime
+﻿namespace UniGame.AddressableTools.Runtime
 {
     using System;
     using System.Collections;

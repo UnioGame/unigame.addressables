@@ -1,9 +1,7 @@
-﻿using UnityEngine.UIElements;
-using Object = UnityEngine.Object;
+﻿using Object = UnityEngine.Object;
 
 namespace UniGame.AddressableTools.Editor
 {
-    using System;
     using System.Collections.Generic;
     using System.Reflection;
     using UniModules.Editor;
@@ -17,8 +15,6 @@ namespace UniGame.AddressableTools.Editor
     using Object = Object;
 
 #if ODIN_INSPECTOR
-    using Sirenix.OdinInspector.Editor;
-    using Sirenix.Utilities.Editor;
 #endif
     
     [CustomPropertyDrawer(typeof(DrawAssetReferenceAttribute),true)]

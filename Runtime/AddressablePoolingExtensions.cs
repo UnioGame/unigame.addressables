@@ -1,17 +1,45 @@
-﻿namespace UniModules.UniGame.CoreModules.UniGame.AddressableTools.Runtime.Pooling
+﻿using UniGame.Runtime.ObjectPool.Extensions;
+using UniGame.Core.Runtime;
+
+namespace UniGame.AddressableTools.Runtime
 {
     using System;
     using Cysharp.Threading.Tasks;
-    using global::UniGame.Runtime.ObjectPool.Extensions;
-    using global::UniGame.AddressableTools.Runtime;
-    using global::UniGame.Core.Runtime;
-    using global::UniGame.Context.Runtime;
     using UnityEngine;
     using UnityEngine.AddressableAssets;
 
     public static class AddressablePoolingExtensions
     {
         public static readonly Vector3 WarmupPosition = new Vector3(10000,10000,10000);
+        
+        public static async UniTask<GameObject> CreatePool(this AssetReferenceT<GameObject> assetReference, ILifeTime lifeTime,int preload = 0)
+        {
+            var source = await assetReference.LoadAssetTaskAsync(lifeTime);
+            source.AttachPoolToLifeTime(lifeTime, true, preload);
+            return source;
+        }
+    
+        public static async UniTask<TComponent> CreatePool<TComponent>(this AssetReferenceT<TComponent> assetReference, ILifeTime lifeTime,int preload = 0)
+            where TComponent : Component
+        {
+            var source = await assetReference.LoadAssetTaskAsync(lifeTime);
+            var sourceObject = source.gameObject;
+            sourceObject.AttachPoolToLifeTime(lifeTime, true, preload);
+            return source;
+        }
+    
+        public static async UniTask<GameObject> Spawn(this AssetReferenceT<GameObject> assetReference, ILifeTime lifeTime)
+        {
+            var source = await assetReference.LoadAssetTaskAsync(lifeTime);
+            return source.Spawn();
+        }
+    
+        public static async UniTask<TComponent> Spawn<TComponent>(this AssetReferenceT<TComponent> assetReference, ILifeTime lifeTime)
+            where TComponent : Component
+        {
+            var source = await assetReference.LoadAssetTaskAsync(lifeTime);
+            return source.Spawn();
+        }
         
         public static async UniTask AttachPoolLifeTimeAsync(this AssetReferenceT<GameObject> objectSource,ILifeTime lifeTime,int preloadCount = 0)
         {

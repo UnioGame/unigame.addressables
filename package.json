@@ -4,7 +4,7 @@
   "displayName": "Addressables Tools",
   "description": "Unity Addressable tools with lifecycle management, asset loading and unloading, and more.",
   "unity": "2023.1",
-  "version": "2025.0.5",
+  "version": "2025.0.6",
   "keywords": [
     "addressables",
     "tools",

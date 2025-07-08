@@ -1,4 +1,4 @@
-﻿namespace UniGame.MetaBackend.Runtime.AddressablesSource
+﻿namespace UniGame.AddressableTools.Runtime
 {
     using System;
     using UnityEngine.AddressableAssets;

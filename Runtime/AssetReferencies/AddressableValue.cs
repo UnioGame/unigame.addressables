@@ -1,4 +1,4 @@
-﻿namespace UniGame.AddressableTools.Runtime.AssetReferencies
+﻿namespace UniGame.AddressableTools.Runtime
 {
     using System;
     using UnityEngine.AddressableAssets;

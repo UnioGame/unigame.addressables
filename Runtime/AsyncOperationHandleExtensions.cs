@@ -1,4 +1,4 @@
-namespace UniGame.Utils.Runtime
+namespace UniGame.AddressableTools.Runtime
 {
     using System;
     using System.Threading;

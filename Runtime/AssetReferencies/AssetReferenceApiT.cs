@@ -1,4 +1,4 @@
-﻿namespace UniGame.Context.Runtime
+﻿namespace UniGame.AddressableTools.Runtime
 {
     using System;
     using UnityEngine;
