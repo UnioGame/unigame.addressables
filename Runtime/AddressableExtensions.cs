@@ -24,7 +24,6 @@
     using UnityEditor;
 #endif
     
-
     public static class AddressableExtensions
     {
         private static object EvaluateKey(object obj)
