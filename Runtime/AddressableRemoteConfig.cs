@@ -44,7 +44,6 @@
         /// if false, then addressable tool will not use this remote source
         /// </summary>
         public bool enabled = true;
-        public bool defaultValue = false;
         /// <summary>
         /// test url for checking remote source availability
         /// </summary>
