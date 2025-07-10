@@ -2,35 +2,12 @@
 
 A comprehensive toolkit for working with Unity Addressables system, providing convenient extensions, components, and services for resource management.
 
-## 📋 Table of Contents
+# 🚀 Features
 
-- [Features](#features)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Core Components](#core-components)
-- [Extensions](#extensions)
-- [Sprite Atlases](#sprite-atlases)
-- [Object Pooling](#object-pooling)
-- [Reactive Extensions](#reactive-extensions)
-- [Editor Tools](#editor-tools)
-- [Usage Examples](#usage-examples)
-
-## 🚀 Features
-
-### Core Features
 - ✅ Simplified work with Addressable resources
 - ✅ Automatic resource lifecycle management
 - ✅ Typed resource references 
-- ✅ R3 lib support
 - ✅ Object pooling system
-- ✅ Sprite atlas support
-- ✅ Reactive extensions for asynchronous work
-
-### Editor Tools
-- ✅ Addressable resource dependency analyzer
-- ✅ Error validation and fixing
-- ✅ Automatic atlas configuration
-- ✅ Cache and data cleanup
 
 ## 📦 Installation
 
@@ -57,9 +34,9 @@ To enable RX/R3 support add the following script define symbols to your project:
 }
 ```
 
-## ⚡ Quick Start
+# ⚡ Quick Start
 
-### Basic Resource Loading
+## Basic Resource Loading
 
 ```csharp
 using UniGame.AddressableTools.Runtime;
@@ -73,8 +50,13 @@ public class ResourceLoader : MonoBehaviour
 
     private async void Start()
     {
-        // Load and create object
+        // Load addressable object and allow to unload it by lifeTime
         var gameObject = await prefabReference.LoadAssetTaskAsync<GameObject>(_lifeTime);
+        
+        // create instance of the addressable object
+        var gameObjectInstance = await prefabReference
+            .LoadAssetInstanceTaskAsync<GameObject>(_lifeTime,destroyInstanceWithLifetime : true);
+        
         var instance = await prefabReference.SpawnObjectAsync<GameObject>(
             transform.position, 
             transform, 
@@ -87,7 +69,7 @@ public class ResourceLoader : MonoBehaviour
 }
 ```
 
-### Working with Components
+## Addressable Mono Components
 
 ```csharp
 [SerializeField] private AssetReferenceComponent<PlayerController> playerReference;
@@ -97,48 +79,15 @@ private async void SpawnPlayer()
     var player = await playerReference.SpawnObjectAsync<PlayerController>(
         spawnPoint.position,
         parent: gameWorld,
-        lifeTime: _lifeTime);
-        
+        lifeTime: _lifeTime,
+        activateOnSpawn : true);
+    
     // player already contains the required component
     player.Initialize();
 }
 ```
 
-## 🧩 Core Components
-
-### AddressableInstancer
-
-Component for automatic creation of objects from Addressable resources.
-
-```csharp
-public class AddressableInstancer : MonoBehaviour
-{
-    [SerializeField] private List<AddressableInstance> links;
-    [SerializeField] private bool createOnStart = true;
-    [SerializeField] private bool unloadOnDestroy = true;
-    
-    // Transform settings
-    [SerializeField] private Transform parent;
-    [SerializeField] private Vector3 position;
-    [SerializeField] private Quaternion rotation;
-}
-```
-
-### AddressableMonoPreloader
-
-Component for resource preloading.
-
-```csharp
-public class AddressableMonoPreloader : MonoBehaviour
-{
-    [SerializeField] private AddressableResourcePreloader preloader;
-    [SerializeField] private bool activateOnStart = true;
-}
-```
-
-## 🔧 Extensions
-
-### Main Loading Methods
+# 🔧 Extensions
 
 ```csharp
 // Load single resource
@@ -159,6 +108,49 @@ var spawned = await assetReference.SpawnObjectAsync<GameObject>(
 var assets = await assetReferences.LoadAssetsTaskAsync<Sprite>(lifeTime);
 ```
 
+# Addressable Remotes
+
+tools for simplify management of remote addressable sources
+
+base remote addressable configuration:
+
+```csharp
+
+    /// <summary>
+    /// Define remote addressable sources
+    /// to activate configuration to scriptable asset into resources folder
+    /// don't forget to enable property in AddressableRemoteConfig
+    /// </summary>
+    [CreateAssetMenu(menuName = "UniGame/Addressables/AddressableRemoteConfig", fileName = "AddressableRemoteConfig")]
+    public class AddressableRemoteConfig : ScriptableObject
+
+````
+
+## 🧰 Usage
+
+- Set up remote addressable configuration
+- 
+
+# 🧩 Mono Tools
+
+## AddressableInstancer
+
+Component for automatic creation of objects from Addressable resources.
+
+```csharp
+public class AddressableInstancer : MonoBehaviour
+{
+    [SerializeField] private List<AddressableInstance> links;
+    [SerializeField] private bool createOnStart = true;
+    [SerializeField] private bool unloadOnDestroy = true;
+    
+    // Transform settings
+    [SerializeField] private Transform parent;
+    [SerializeField] private Vector3 position;
+    [SerializeField] private Quaternion rotation;
+}
+```
+
 ### Working with Dependencies
 
 ```csharp
@@ -173,54 +165,12 @@ await assetReference.LoadAssetTaskAsync<GameObject>(lifeTime, true, progress);
 await AddressableExtensions.ClearCacheAsync();
 ```
 
-### Synchronous Loading
-
-```csharp
-// For cases when resource is already loaded
-var texture = assetReference.LoadAssetForCompletion<Texture2D>(lifeTime);
-var instance = assetReference.LoadAssetInstanceForCompletion<GameObject>(lifeTime);
-```
-
-## 🎨 Sprite Atlases
-
-### Atlas Service Setup
-
-```csharp
-public class AddressableSpriteAtlasService : IAddressableAtlasService
-{
-    public async UniTask<SpriteAtlas> LoadAtlasAsync(string tag);
-    public void RegisterSpriteAtlas(SpriteAtlas atlas);
-}
-```
-
-### Using Atlases
-
-```csharp
-// Automatic registration through service
-public class AtlasUser : MonoBehaviour
-{
-    [SerializeField] private AtlasReference atlasRef;
-    
-    private async void Start()
-    {
-        var atlas = await atlasService.LoadAtlasAsync(atlasRef.tag);
-        var sprite = atlas.GetSprite("spriteName");
-    }
-}
-```
-
-### Editor Setup
-
-1. Create `AddressableAtlasesSettingsAsset`
-2. Configure `AddressableAtlasesSource`
-3. Use "Reimport" button for automatic atlas collection
-
 ## 🎱 Object Pooling
 
 ### Pool Creation
 
 ```csharp
-// Create pool with preloading
+// Create pool with preloading, all objects will be automatically released when the lifetime ends
 await bulletPrefab.AttachPoolLifeTimeAsync(lifeTime, preloadCount: 50);
 
 // Warm up pool
@@ -236,43 +186,12 @@ var bullet = await bulletPrefab.SpawnAsync(lifeTime, firePoint.position, firePoi
 // Create active object
 var activeBullet = await bulletPrefab.SpawnActiveAsync(lifeTime, firePoint);
 
-// Objects automatically return to pool when deactivated
+activeBullet.Despawn(); // Return to pool
 ```
 
-## ⚡ Reactive Extensions
+# 🛠️ Editor Tools
 
-### Creating Observable from AssetReference
-
-```csharp
-// Create reactive stream
-var textureObservable = textureReference.ToObservable<Texture2D>(lifeTime);
-
-// Subscribe to changes
-textureObservable.Subscribe(texture => {
-    if (texture != null)
-        renderer.material.mainTexture = texture;
-});
-
-// Combine with other streams
-var combinedStream = textureObservable
-    .Where(t => t != null)
-    .Select(t => new MaterialData(t))
-    .Subscribe(data => ApplyMaterial(data));
-```
-
-## 🛠️ Editor Tools
-
-### Dependency Analyzer
-
-**Menu:** `UniGame/Tools/Addressables/Addressables Dependencies Window`
-
-Features:
-- Analyze dependencies between Addressable resources
-- Find local resources with remote dependencies
-- Filter and search problematic resources
-- Export reports
-
-### Validation and Fixing
+## Validation and Fixing
 
 **Menu:** `UniGame/Addressables/`
 
@@ -281,15 +200,9 @@ Features:
 - `Remove Missing References` - Remove broken references
 - `Remote Empty Groups` - Remove empty groups
 
-### Cache Cleanup
+# 📚 Examples
 
-- `Clean Library Cache` - Clean library cache
-- `Clean Default Context Builder` - Clean context builder
-- `Clean All` - Complete cleanup
-
-## 📚 Usage Examples
-
-### Level Loader
+## Level Loader
 
 ```csharp
 public class LevelLoader : MonoBehaviour
@@ -304,79 +217,13 @@ public class LevelLoader : MonoBehaviour
         var sceneInstance = await levelScene.LoadSceneTaskAsync(
             _levelLifeTime, 
             LoadSceneMode.Additive);
-
-        // Preload level resources
-        await levelPrefabs.LoadAssetsTaskAsync<GameObject>(_levelLifeTime);
-        
-        // Create level objects
-        foreach (var prefabRef in levelPrefabs)
-        {
-            await prefabRef.SpawnObjectAsync<GameObject>(
-                Vector3.zero, 
-                null, 
-                _levelLifeTime);
-        }
     }
 
     public void UnloadLevel() => _levelLifeTime.Release();
 }
 ```
 
-### Inventory System with Icons
-
-```csharp
-public class InventoryItem : MonoBehaviour
-{
-    [SerializeField] private AssetReferenceSprite iconReference;
-    [SerializeField] private Image iconImage;
-    private LifeTimeDefinition _lifeTime = new();
-
-    private async void Start()
-    {
-        // Reactive icon loading
-        var iconObservable = iconReference.ToObservable<Sprite>(_lifeTime);
-        iconObservable.Subscribe(sprite => iconImage.sprite = sprite);
-    }
-
-    private void OnDestroy() => _lifeTime.Terminate();
-}
-```
-
-### Audio Resource Manager
-
-```csharp
-public class AudioManager : MonoBehaviour
-{
-    [SerializeField] private List<AssetReferenceAudioClip> musicTracks;
-    [SerializeField] private AudioSource musicSource;
-    private LifeTimeDefinition _lifeTime = new();
-
-    public async UniTask PlayRandomTrack()
-    {
-        var randomTrack = musicTracks[Random.Range(0, musicTracks.Count)];
-        var audioClip = await randomTrack.LoadAssetTaskAsync<AudioClip>(_lifeTime);
-        
-        musicSource.clip = audioClip;
-        musicSource.Play();
-    }
-
-    private void OnDestroy() => _lifeTime.Terminate();
-}
-```
-
-## 🔗 Typed References
-
-The module provides numerous typed references:
-
-- `AssetReferenceGameObject` - for GameObject
-- `AssetReferenceComponent<T>` - for components
-- `AssetReferenceSprite` - for sprites
-- `AssetReferenceSpriteAtlas` - for atlases
-- `AssetReferenceParticleSystem` - for particle systems
-- `AssetReferenceScriptableObject<T>` - for ScriptableObject
-- `AddressableValue<T>` - wrapper with inspector preview
-
-## ⚠️ Important Notes
+# Notes
 
 ### Lifecycle Management
 
@@ -390,26 +237,6 @@ var asset = await reference.LoadAssetTaskAsync<GameObject>(lifeTime);
 var asset = await reference.LoadAssetTaskAsync<GameObject>(null);
 ```
 
-### Dependency Preloading
-
-For critical resources use preloading:
-
-```csharp
-// Preload before use
-await criticalAssets.DownloadDependenciesAsync(lifeTime);
-```
-
-### Pooling for Frequently Created Objects
-
-```csharp
-// Setup pool for bullets, effects, etc.
-await bulletPrefab.AttachPoolLifeTimeAsync(gameLifeTime, 100);
-```
-
-## 📄 License
+# 📄 License
 
 MIT License - see LICENSE file for details.
-
-## 🤝 Support
-
-For questions and suggestions, contact the UniGame team.

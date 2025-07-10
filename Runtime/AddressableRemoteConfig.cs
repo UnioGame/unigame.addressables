@@ -20,10 +20,13 @@
         /// Enable or disable addressable remote sources
         /// </summary>
         public bool enabled = true;
+
+        /// <summary>
+        /// amount of single url tries to check remote source availability
+        /// </summary>
+        public int urlTriesCount = 3;
         
-        public int urlRetryCount = 3;
-        
-        public int timeoutSeconds = 10;
+        public int timeoutSeconds = 5;
         
         /// <summary>
         /// list of remote addressables sources

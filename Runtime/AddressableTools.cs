@@ -1,49 +1,57 @@
 ﻿namespace UniGame.AddressableTools.Runtime
 {
+    using System.Threading;
+    using Core.Runtime;
     using Cysharp.Threading.Tasks;
+    using UniCore.Runtime.ProfilerTools;
     using UnityEngine;
 
     public static class AddressableTools
     {
-        private static AddressableLocationHandler addressableRemote;
-        private static AddressableRemoteConfig remoteConfig;
-        private static bool initialized = false;
-        
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        public static void Initialize()
+        public static async UniTask<IAddressableLocationService> CreateAddressableLocationService(ILifeTime lifeTime)
         {
-            // Initialization logic can be added here if needed
-            InitializeAsync().Forget();
+            var remoteConfig  = Resources.Load<AddressableRemoteConfig>(string.Empty);
+            return await CreateAddressableLocationService(remoteConfig, lifeTime);
         }
+        
+        public static async UniTask<IAddressableLocationService> CreateAddressableLocationService(AddressableRemoteConfig config,ILifeTime lifeTime)
+        {
+            var remoteConfig  = config;
 
-        public static async UniTask InitializeAsync()
-        {
-            initialized = false;
-
-            await InitializeRemoteAddressableAsync();
+            if (remoteConfig == null || remoteConfig.enabled == false)
+            {
+                GameLog.LogError("Remote addressable configuration is not set or disabled.");
+                return null;
+            }
             
-            initialized = true;
-        }
-        
-        public static async UniTask WaitForReadyAsync()
-        {
-            if (initialized) return;
-            await UniTask.WaitUntil(static () => initialized);
-        }
-        
-        public static async UniTask InitializeRemoteAddressableAsync()
-        {
-            remoteConfig  = Resources.Load<AddressableRemoteConfig>(string.Empty);
-            if (remoteConfig == null || remoteConfig.enabled == false) return;
-            
-            
-            addressableRemote = new();
+            var addressableLocations = new AddressableLocationService();
+            //register remote locations
             foreach (var remoteLocation in remoteConfig.remotes)
             {
-                addressableRemote.Register(remoteLocation);
+                addressableLocations.Register(remoteLocation);
             }
 
-            await addressableRemote.SelectRemoteLocationAsync();
+            //select default active remote location
+            var locationResult = await addressableLocations
+                .SelectRemoteLocationAsync(remoteConfig.urlTriesCount, remoteConfig.timeoutSeconds);
+
+            if (locationResult.success == false)
+            {
+                GameLog.LogError($"Addressable Remote Location: Failed to select remote location after .");
+                return null;
+            }
+            
+            var remoteUrl = locationResult.url;
+
+            var activateResult = await addressableLocations
+                .ActivateRemoteLocationAsync(remoteUrl);
+
+            if (activateResult.success == false)
+                return null;
+
+            lifeTime.AddDispose(addressableLocations);
+            
+            return addressableLocations;
         }
 
     }
