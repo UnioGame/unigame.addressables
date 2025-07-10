@@ -1,38 +1,68 @@
 ﻿namespace UniGame.AddressableTools.Runtime
 {
     using System;
-    using System.Collections.Generic;
+    using UnityEngine;
     using System.Linq;
-    using Cysharp.Threading.Tasks;
     using Newtonsoft.Json;
+    using Cysharp.Threading.Tasks;
+    using System.Collections.Generic;
     using UniCore.Runtime.ProfilerTools;
     using UniModules.Runtime.Network;
-    using UnityEngine;
     using UnityEngine.AddressableAssets;
     using UnityEngine.ResourceManagement.ResourceLocations;
 
     public class AddressableLocationService : IAddressableLocationService
     {
-        private const string RemoteAddressableLocationKey = nameof(RemoteAddressableLocationKey);
+        private const string AddressableRemoteLocationKey = nameof(AddressableRemoteLocationKey);
         
         private bool _isRemoteLocationActive = false;
         private bool _isEnabled = true;
-        private AddressableRemoteValue _activeLocation;
-        private Dictionary<string,AddressableRemoteValue> _remoteLocations = new();
         private string _activeRemoteUrl = string.Empty;
         private string _catalogUrl = string.Empty;
-        private AddressableRemoteValue _activeRemote;
+        
+        private AddressableRemoteValue _activeLocation;
+        
+        private Dictionary<string,AddressableRemoteValue> _remoteLocations = new();
         private Dictionary<IResourceLocation,string> _transformCache = new();
 
+        public AddressableLocationService()
+        {
+            RestoreCachedRemote();
+        }
+        
         public IReadOnlyDictionary<string,AddressableRemoteValue> RemoteLocations => _remoteLocations;
         
         public AddressableRemoteValue ActiveRemoteLocation => _activeLocation;
+
+        public bool RestoreCachedRemote()
+        {
+            if (!PlayerPrefs.HasKey(AddressableRemoteLocationKey)) return false;
+            var cachedData = PlayerPrefs.GetString(AddressableRemoteLocationKey, string.Empty);
+            var cachedLocation = JsonConvert.DeserializeObject<AddressableRemoteValue>(cachedData);
+            if(cachedLocation == null) return false;
+            
+            Register(cachedLocation);
+            
+            _activeLocation = cachedLocation;
+            _activeRemoteUrl = cachedLocation.remoteUrl;
+            
+            return true;
+        }
+        
+        public bool SaveCachedRemote(AddressableRemoteValue value)
+        {
+            if (value == null) return false;
+            var data = JsonConvert.SerializeObject(value);
+            PlayerPrefs.SetString(AddressableRemoteLocationKey, data);
+            PlayerPrefs.Save();
+            return true;
+        }
         
         public void SetStatus(bool isActive)
         {
             _isEnabled = isActive;
         }
-        
+
         public void Register(AddressableRemoteValue remote)
         {
             if (remote.enabled == false) return;
@@ -46,6 +76,12 @@
         
         public bool Remove(string remoteUrl)
         {
+            if (!string.IsNullOrEmpty(_activeRemoteUrl) &&
+                _activeRemoteUrl.Equals(remoteUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                _activeLocation = null;
+                _activeRemoteUrl = string.Empty;
+            }
             return _remoteLocations.Remove(remoteUrl);
         }
         
@@ -86,17 +122,23 @@
             return result;
         }
         
-        public async UniTask<AddressableRemoteResult> ActivateRemoteLocationAsync(AddressableRemoteValue location)
+        public async UniTask<AddressableRemoteResult> ActivateRemoteLocationAsync(AddressableRemoteValue remoteLocation)
         {
             var result = new AddressableRemoteResult()
             {
                 success = false,
                 error = string.Empty,
-                url = location.remoteUrl,
+                url = remoteLocation.remoteUrl,
             };
+
+            //if remote location is not registered - add it to the list
+            if (!_remoteLocations.TryGetValue(remoteLocation.remoteUrl, out var location))
+            {
+                location = remoteLocation;
+                Register(remoteLocation);
+            }
             
-            if(location.enabled == false)
-                return result;
+            if(location.enabled == false) return result;
 
             var remoteUrl = location.remoteUrl;
             
@@ -106,25 +148,19 @@
                 return result;
             }
             
-            _activeLocation = location;
-            _activeRemoteUrl = remoteUrl;
-            
-            var catalog = _activeLocation.remoteCatalogName;
-            _catalogUrl = string.IsNullOrEmpty(catalog) 
+            var catalog = location.remoteCatalogName;
+            var catalogUrl = string.IsNullOrEmpty(catalog) 
                 ? string.Empty
-                : $"{_activeRemoteUrl.TrimEnd('/')}/{catalog.TrimStart('/')}";
-            
-            // active remote location is changed - clear the cache
-            _transformCache.Clear();
+                : $"{remoteUrl.TrimEnd('/')}/{catalog.TrimStart('/')}";
             
             var resourceLocator = await Addressables.InitializeAsync().ToUniTask();
             
-            if (string.IsNullOrEmpty(_catalogUrl) == false)
+            if (string.IsNullOrEmpty(catalogUrl) == false)
             {
                 // Reload the catalog with the new URL if necessary
                 // You might need to unload the current catalog and load a new one
                 var catalogResult = await Addressables
-                    .LoadContentCatalogAsync(_catalogUrl)
+                    .LoadContentCatalogAsync(catalogUrl)
                     .ToUniTask();
 
                 if (catalogResult != null)
@@ -134,8 +170,21 @@
                 }
             }
 
-            await Addressables.CleanBundleCache();
-
+            if (_activeRemoteUrl == null ||
+                !_activeRemoteUrl.Equals(remoteUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                SaveCachedRemote(location);
+                
+                Debug.LogError($"Addressable CLEAR BUNDLE CACHE {location.remoteUrl}");
+                // active remote location is changed - clear the cache
+                _transformCache.Clear();
+                await Addressables.CleanBundleCache();
+            }
+            
+            _activeLocation = location;
+            _activeRemoteUrl = remoteUrl;
+            _catalogUrl = catalogUrl;
+            
             if (_isRemoteLocationActive == false)
             {
                 Addressables.ResourceManager.InternalIdTransformFunc = null;
@@ -143,7 +192,7 @@
                 _isRemoteLocationActive = true;
             }
 
-            result.url = _activeRemoteUrl;
+            result.url = remoteUrl;
             result.success = true;
             result.error = string.Empty;
 

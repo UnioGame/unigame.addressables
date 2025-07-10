@@ -123,13 +123,94 @@ base remote addressable configuration:
     /// </summary>
     [CreateAssetMenu(menuName = "UniGame/Addressables/AddressableRemoteConfig", fileName = "AddressableRemoteConfig")]
     public class AddressableRemoteConfig : ScriptableObject
-
+    {
+        /// <summary>
+        /// Enable or disable addressable remote sources
+        /// </summary>
+        public bool enabled = true;
+        /// <summary>
+        /// amount of single url tries to check remote source availability
+        /// </summary>
+        public int urlTriesCount = 3;
+        /// <summary>
+        /// remote utl check timeout in seconds
+        /// </summary>
+        public int timeoutSeconds = 5;
+        /// <summary>
+        /// list of remote addressables sources
+        /// is no default value is set, then first remote will be used as default
+        /// </summary>
+#if ODIN_INSPECTOR
+        [ListDrawerSettings(ListElementLabelName = "@name")]
+#endif
+        public List<AddressableRemoteValue> remotes = new();
+    }
 ````
+
+```csharp
+    public class AddressableRemoteValue
+    {
+        /// <summary>
+        /// Name of remote source, used for identification
+        /// </summary>
+        public string name;
+        /// <summary>
+        /// if false, then addressable tool will not use this remote source
+        /// </summary>
+        public bool enabled = true;
+        /// <summary>
+        /// test url for checking remote source availability
+        /// </summary>
+        public string testUrl;
+        /// <summary>
+        /// Remote url for addressable system source like CDN or remote server
+        /// </summary>
+        public string remoteUrl;
+        /// <summary>
+        /// Name of remote catalog, which will be used for addressable system
+        /// </summary>
+        public string remoteCatalogName;
+    }
+```
 
 ## 🧰 Usage
 
 - Set up remote addressable configuration
-- 
+- Create `AddressableLocationService` instance for managing remote sources
+
+```csharp
+
+    AddressableRemoteConfig configuration;
+    LifeTime lifeTime = new()
+
+    /// Create addressable remote location service.
+    /// Register all remote locations from configuration.
+    var addressableLocationService ??= await AddressableTools
+        .CreateAddressableLocationService(configuration,lifeTime);
+
+    // Get best remote location registered in service
+    var bestLocation = await addressableLocationService
+        .SelectRemoteLocationAsync(tries:3,timeout:5); 
+    
+    if(bestLocation.success)
+    {
+        /// Activate remote location by url, the url should be registered in configuration
+        var urlActivateResult = addressableLocationService
+            .ActivateRemoteLocationAsync(bestLocation.url);
+    }
+    
+    // just for the demo select first remote location
+    var location = addressableLocationService.RemoteLocations.Values.FirstOrDefault();
+    /// Activate remote location by one of the registered locations
+    var activateResult = addressableLocationService
+        .ActivateRemoteLocationAsync(location);
+        
+```
+
+Remember:
+
+1. Write into `AddressableRemoteConfig` all your remote addressable sources, it's will be used for replacement and selection the best
+2. If you change remote addressable configuration for new remote, Addressable cache will be cleared
 
 # 🧩 Mono Tools
 

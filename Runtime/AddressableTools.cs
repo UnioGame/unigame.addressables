@@ -1,5 +1,6 @@
 ﻿namespace UniGame.AddressableTools.Runtime
 {
+    using System.Linq;
     using System.Threading;
     using Core.Runtime;
     using Cysharp.Threading.Tasks;
@@ -14,6 +15,10 @@
             return await CreateAddressableLocationService(remoteConfig, lifeTime);
         }
         
+        /// <summary>
+        /// Create addressable remote location service.
+        /// Register all remote locations from configuration.
+        /// </summary>
         public static async UniTask<IAddressableLocationService> CreateAddressableLocationService(AddressableRemoteConfig config,ILifeTime lifeTime)
         {
             var remoteConfig  = config;
@@ -23,35 +28,51 @@
                 GameLog.LogError("Remote addressable configuration is not set or disabled.");
                 return null;
             }
+
+            var remotes = remoteConfig.remotes;
+            var locationService = new AddressableLocationService();
+            var isPermanent = config.isPermanentRemote;
             
-            var addressableLocations = new AddressableLocationService();
+            if (locationService.ActiveRemoteLocation != null)
+            {
+                var activeLocation = locationService.ActiveRemoteLocation;
+                var foundLocation = remotes
+                    .FirstOrDefault(x => x.remoteUrl.Equals(activeLocation.remoteUrl));
+                if (foundLocation == null)
+                    locationService.Remove(activeLocation);
+            }
+            
             //register remote locations
-            foreach (var remoteLocation in remoteConfig.remotes)
+            foreach (var remoteLocation in remotes)
             {
-                addressableLocations.Register(remoteLocation);
+                locationService.Register(remoteLocation);
             }
 
-            //select default active remote location
-            var locationResult = await addressableLocations
-                .SelectRemoteLocationAsync(remoteConfig.urlTriesCount, remoteConfig.timeoutSeconds);
-
-            if (locationResult.success == false)
-            {
-                GameLog.LogError($"Addressable Remote Location: Failed to select remote location after .");
-                return null;
-            }
+            var remoteUrl = locationService.ActiveRemoteLocation?.remoteUrl;
             
-            var remoteUrl = locationResult.url;
+            if (!isPermanent || locationService.ActiveRemoteLocation == null)
+            {
+                //select default active remote location
+                var locationResult = await locationService
+                    .SelectRemoteLocationAsync(remoteConfig.urlTriesCount, remoteConfig.timeoutSeconds);
+                
+                if (locationResult.success == false)
+                {
+                    GameLog.LogError($"Addressable Remote Location: Failed to select remote location after .");
+                    return null;
+                }
+                
+                remoteUrl = locationResult.url;
+            }
 
-            var activateResult = await addressableLocations
+            var activateResult = await locationService
                 .ActivateRemoteLocationAsync(remoteUrl);
 
-            if (activateResult.success == false)
-                return null;
+            if (activateResult.success == false) return null;
 
-            lifeTime.AddDispose(addressableLocations);
+            lifeTime.AddDispose(locationService);
             
-            return addressableLocations;
+            return locationService;
         }
 
     }

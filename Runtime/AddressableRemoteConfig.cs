@@ -20,14 +20,18 @@
         /// Enable or disable addressable remote sources
         /// </summary>
         public bool enabled = true;
-
+        /// <summary>
+        /// if true, first activated remote source will be used all the time
+        /// </summary>
+        public bool isPermanentRemote = false;
         /// <summary>
         /// amount of single url tries to check remote source availability
         /// </summary>
         public int urlTriesCount = 3;
-        
+        /// <summary>
+        /// remote utl check timeout in seconds
+        /// </summary>
         public int timeoutSeconds = 5;
-        
         /// <summary>
         /// list of remote addressables sources
         /// is no default value is set, then first remote will be used as default
