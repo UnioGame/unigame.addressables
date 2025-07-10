@@ -122,13 +122,15 @@
 #endif
         public void Destroy()
         {
-            _lifeTime?.Release();
+            _lifeTime?.Terminate();
             _lifeTime = null;
+            
             foreach (var assetItem in _runtime)
             {
                 if (assetItem == null) continue;
                 assetItem.Despawn();
             }
+            
             foreach (var assetItem in _runtimeAssets)
             {
                 if (assetItem == null) continue;
@@ -143,7 +145,7 @@
 #endif
         public async UniTask Create()
         {
-            _lifeTime?.Release();
+            _lifeTime?.Terminate();
             _lifeTime = new LifeTime();
             
             var referencesTasks = links

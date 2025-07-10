@@ -49,7 +49,7 @@ namespace UniGame.AddressableTools.Editor
         [DisableIf(nameof(IsPlaying))]
         public void Reload()
         {
-            _lifeTime.Release();
+            _lifeTime.Restart();
             editor = new AddressableDependenciesEditor();
             editor.Initialize();
         } 
