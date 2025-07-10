@@ -163,10 +163,12 @@
                     .LoadContentCatalogAsync(catalogUrl)
                     .ToUniTask();
 
-                if (catalogResult != null)
+                if (catalogResult == null)
                 {
-                    var data = JsonConvert.SerializeObject(result);
-                    GameLog.Log($"Addressable Catalog loaded with new path: \n{data}", Color.green);
+                    var message = "Failed to load content catalog from URL: " + catalogUrl;
+                    GameLog.LogError(message);
+                    result.error = message;
+                    return result;
                 }
             }
 
@@ -174,8 +176,6 @@
                 !_activeRemoteUrl.Equals(remoteUrl, StringComparison.OrdinalIgnoreCase))
             {
                 SaveCachedRemote(location);
-                
-                Debug.LogError($"Addressable CLEAR BUNDLE CACHE {location.remoteUrl}");
                 // active remote location is changed - clear the cache
                 _transformCache.Clear();
                 await Addressables.CleanBundleCache();
@@ -249,10 +249,7 @@
             
             //is we already transformed this location -  return cached id
             if(_transformCache.TryGetValue(location, out var cachedId))
-            {
-                GameLog.Log($"Transform cache hit for {location.InternalId} => {cachedId}", Color.green);
                 return cachedId;
-            }
 
             var resultId = internalId;
             var replaced = false;
@@ -267,18 +264,11 @@
                     continue;
                 
                 resultId = internalId.Replace(key,_activeRemoteUrl);
-                replaced = true;
-                
-                GameLog.Log($"Transforming {internalId} to {resultId} using remote location {key}", Color.green);
-                
                 break;
             }
             
             //add into cache
             _transformCache[location] = resultId;
-
-            GameLog.Log($"Addressable Remote: RESULT {replaced} : {resultId} | \nORIGIN ={internalId}", Color.green);
-
             return resultId; // Return the original ID if no replacement is needed
         }
 
