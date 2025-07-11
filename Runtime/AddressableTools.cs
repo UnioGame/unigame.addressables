@@ -61,6 +61,8 @@
                     return null;
                 }
                 
+                GameLog.Log($"Addressable Remote Location: Selected remote location = {locationResult.url}",Color.green);
+                
                 remoteUrl = locationResult.url;
             }
 
