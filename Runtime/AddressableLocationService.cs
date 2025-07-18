@@ -8,6 +8,9 @@
     using System.Collections.Generic;
     using UniCore.Runtime.ProfilerTools;
     using UniModules.Runtime.Network;
+#if UNITY_EDITOR
+    using UnityEditor.AddressableAssets;
+#endif
     using UnityEngine.AddressableAssets;
     using UnityEngine.ResourceManagement.ResourceLocations;
 
@@ -29,6 +32,13 @@
         {
             RestoreCachedRemote();
         }
+
+#if UNITY_EDITOR
+        public static bool IsAssetDatabase =>
+            AddressableAssetSettingsDefaultObject.Settings.ActivePlayModeDataBuilder.Name.Contains("Asset Database");
+#else
+        public static bool IsAssetDatabase => false;
+#endif
         
         public IReadOnlyDictionary<string,AddressableRemoteValue> RemoteLocations => _remoteLocations;
         
@@ -178,7 +188,8 @@
                 SaveCachedRemote(location);
                 // active remote location is changed - clear the cache
                 _transformCache.Clear();
-                await Addressables.CleanBundleCache();
+                if (!IsAssetDatabase)
+                    await Addressables.CleanBundleCache();
             }
             
             _activeLocation = location;
