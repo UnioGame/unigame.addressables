@@ -62,7 +62,7 @@ public static class AddressablesAssetsFix
         PrintStatus(isValid, errors, LogType.Warning);
     }
     
-    [MenuItem(itemName: "UniGame/Addressables/Remote Empty Groups")]
+    [MenuItem(itemName: "UniGame/Addressables/Remove Empty Groups")]
     public static void RemoveEmptyGroups()
     {
         var settings = AddressableAssetSettingsDefaultObject.Settings;
