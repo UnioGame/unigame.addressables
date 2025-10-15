@@ -794,6 +794,18 @@
             
             return result.Result;
         }
+        
+        public static async UniTask<T> LoadAssetInstanceAsync<T>(
+            this string referenceKey, 
+            ILifeTime lifeTime, 
+            bool downloadDependencies = false,
+            IProgress<float> progress = null) where T : Object
+        {
+            var asset = await LoadAssetTaskAsync<T>(referenceKey, lifeTime, downloadDependencies, progress);
+            if (asset == null) return null;
+            var instance = Object.Instantiate(asset);
+            return instance;
+        }
 
         public static void NotifyProgress(IAsyncHandleStatus progressData,IProgress<HandleStatus> progress )
         {
