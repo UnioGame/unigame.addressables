@@ -943,12 +943,14 @@
 
         private static async UniTask WaitWhileCachingReadyAsync(CancellationToken cancellationToken = default)
         {
+#if !UNITY_WEBGL
             if (Caching.ready) return;
 
             while (Caching.ready == false && cancellationToken.IsCancellationRequested == false)
             {
                 await UniTask.WaitForEndOfFrame(cancellationToken);
             }
+#endif
         }
 
         private static async UniTask<AddressableLoadResult> LoadAssetTaskWithProgressAsync<T>(
