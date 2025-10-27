@@ -96,7 +96,13 @@
             //add to resource unloading
             sceneHandle.AddTo(lifeTime);
 
-            await sceneHandle.ToUniTask(progress,cancellationToken:lifeTime.Token);
+            // await sceneHandle.ToUniTask(progress,cancellationToken:lifeTime.Token);
+            
+            while (!sceneHandle.IsDone && !lifeTime.IsTerminated)
+            {
+                progress?.Report(sceneHandle.PercentComplete);
+                await UniTask.Yield(lifeTime.Token);
+            }
 
             if (sceneHandle.Status == AsyncOperationStatus.Succeeded)
             {
