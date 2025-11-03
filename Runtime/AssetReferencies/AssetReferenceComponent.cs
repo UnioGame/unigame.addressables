@@ -41,7 +41,11 @@ namespace UniGame.AddressableTools.Runtime
             get
             {
                 if (CachedAsset != null || string.IsNullOrEmpty(AssetGUID) && CachedAsset is GameObject)
-                    return (CachedAsset as GameObject)?.GetComponent<TAsset>();
+                {
+                    var gameObject = CachedAsset as GameObject;
+                    var componentObject = CachedAsset as TAsset;
+                    return componentObject != null ? componentObject : gameObject?.GetComponent<TAsset>();
+                }
                 
                 var assetPath = AssetDatabase.GUIDToAssetPath(AssetGUID);
                 var mainType  = AssetDatabase.GetMainAssetTypeAtPath(assetPath);
@@ -49,9 +53,11 @@ namespace UniGame.AddressableTools.Runtime
                 CachedAsset = AssetDatabase.LoadAssetAtPath(assetPath, mainType);
                 
                 var baseAsset = CachedAsset as GameObject;
-                return baseAsset == null 
-                    ? null 
-                    : baseAsset.GetComponent<TAsset>();
+                var componentAsset = CachedAsset as TAsset;
+
+                return componentAsset != null 
+                    ? componentAsset 
+                    : baseAsset?.GetComponent<TAsset>();
             }
         }
 #endif
