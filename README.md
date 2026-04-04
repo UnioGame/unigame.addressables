@@ -1,323 +1,281 @@
 # UniGame.AddressableTools
 
-A comprehensive toolkit for working with Unity Addressables system, providing convenient extensions, components, and services for resource management.
+UniGame.AddressableTools is a practical layer on top of Unity Addressables for game code. It reduces boilerplate around asset loading, lifetime-based cleanup, prefab spawning, pooling, and remote catalog selection.
 
-# 🚀 Features
+## Why use it
 
-- ✅ Simplified work with Addressable resources
-- ✅ Automatic resource lifecycle management
-- ✅ Typed resource references 
-- ✅ Object pooling system
+- Load addressable assets with `ILifeTime` and release them automatically.
+- Use strongly typed references for components and scriptable objects.
+- Spawn and warm up addressable prefabs with a small API surface.
+- Switch remote addressable sources without wiring custom infrastructure each time.
+- Fix common Addressables project issues from a compact set of editor commands.
 
-## 📦 Installation
+Using `ILifeTime` makes resource management easier because loading and cleanup stay tied to the same gameplay scope. Instead of manually tracking handles and release points, you bind the asset to a lifetime such as a screen, scene, system, or spawned object and let cleanup happen when that scope ends.
 
-The module is part of UniGame.CoreModules and is automatically included in the project.
+## Installation
 
-Add the following dependencies to your `Packages/manifest.json` file:
-
-```json
-  "dependencies": {
-    "com.unigame.addressablestools" : "https://github.com/UnioGame/unigame.addressables.git",
-  }
-```
-
-To enable RX/R3 support add the following script define symbols to your project: "UNIGAME_RX_ENABLED"
-
-### Dependencies
+Add the package to `Packages/manifest.json`:
 
 ```json
 {
-    "com.unity.addressables": "2.6.0",
-    "com.cysharp.unitask" : "https://github.com/Cysharp/UniTask.git?path=src/UniTask/Assets/Plugins/UniTask",
-    "com.unigame.unicore": "https://github.com/UnioGame/unigame.core.git",
-    "com.unigame.rx": "https://github.com/UnioGame/unigame.rx.git"
+  "dependencies": {
+    "com.unigame.addressablestools": "https://github.com/UnioGame/unigame.addressables.git"
+  }
 }
 ```
 
-# ⚡ Quick Start
+Core dependencies:
 
-## Basic Resource Loading
+```json
+{
+  "com.unity.addressables": "2.8.1",
+  "com.cysharp.unitask": "https://github.com/Cysharp/UniTask.git?path=src/UniTask/Assets/Plugins/UniTask",
+  "com.unigame.unicore": "https://github.com/UnioGame/unigame.core.git"
+}
+```
+
+Optional:
+
+- Define `UNIGAME_RX_ENABLED` to enable reactive extensions.
+- Odin Inspector attributes are used conditionally when available.
+
+## Quick start
+
+### Load an asset with automatic cleanup
+
+```csharp
+using Cysharp.Threading.Tasks;
+using UniGame.AddressableTools.Runtime;
+using UniGame.Core.Runtime;
+using UnityEngine;
+using UnityEngine.AddressableAssets;
+
+public class PrefabLoader : MonoBehaviour
+{
+    [SerializeField] private AssetReferenceGameObject prefabReference;
+
+    private LifeTime _lifeTime;
+
+    private void Awake()
+    {
+        _lifeTime = new LifeTime();
+    }
+
+    private async void Start()
+    {
+        var prefab = await prefabReference.LoadAssetTaskAsync(_lifeTime);
+        var instance = await prefabReference.SpawnObjectAsync<GameObject>(
+            position: transform.position,
+            parent: transform,
+            lifeTime: _lifeTime,
+            activateOnSpawn: true);
+    }
+
+    private void OnDestroy()
+    {
+        _lifeTime.Terminate();
+    }
+}
+```
+
+### Use a typed component reference
+
+```csharp
+using UniGame.AddressableTools.Runtime;
+using UnityEngine;
+
+public class PlayerSpawner : MonoBehaviour
+{
+    [SerializeField] private AssetReferenceComponent<PlayerController> playerReference;
+
+    public async void Spawn(ILifeTime lifeTime, Transform parent)
+    {
+        var player = await playerReference.SpawnObjectAsync<PlayerController>(
+            position: Vector3.zero,
+            parent: parent,
+            lifeTime: lifeTime,
+            activateOnSpawn: true);
+
+        player.Initialize();
+    }
+}
+```
+
+### Preload a pool before gameplay starts
+
+```csharp
+using UniGame.AddressableTools.Runtime;
+using UnityEngine.AddressableAssets;
+
+public async UniTask WarmupWeaponPool(AssetReferenceGameObject projectile, ILifeTime lifeTime)
+{
+    await projectile.AttachPoolLifeTimeAsync(lifeTime, preloadCount: 32);
+    await projectile.WarmUp(lifeTime, count: 16, activate: false);
+}
+```
+
+## Core runtime API
+
+The package is built around a few methods that cover most daily usage.
+
+### Loading and spawning
+
+```csharp
+var texture = await textureReference.LoadAssetTaskAsync<Texture2D>(lifeTime);
+
+var instance = await prefabReference.LoadAssetInstanceTaskAsync<GameObject>(
+    lifeTime,
+    destroyInstanceWithLifetime: true);
+
+var spawned = await prefabReference.SpawnObjectAsync<GameObject>(
+    position: Vector3.zero,
+    parent: transform,
+    lifeTime: lifeTime,
+    activateOnSpawn: true);
+```
+
+`SpawnObjectAsync` also works without an explicit lifetime. If `lifeTime` is `null`, the loaded addressable handle is attached to the spawned instance lifetime. When that instance is destroyed and no other references keep the asset alive, the addressable reference can be released automatically.
+
+### Bulk loading and scene loading
+
+```csharp
+var sprites = await spriteReferences.LoadAssetsTaskAsync<Sprite>(lifeTime);
+
+var scene = await sceneReference.LoadSceneTaskAsync(
+    lifeTime,
+    loadSceneMode: LoadSceneMode.Additive);
+```
+
+### Dependencies and cache
+
+```csharp
+await prefabReference.DownloadDependencyAsync(lifeTime);
+
+var progress = new Progress<float>(value => Debug.Log($"Download: {value:P}"));
+var asset = await prefabReference.LoadAssetTaskAsync<GameObject>(lifeTime, true, progress);
+
+await AddressableExtensions.ClearCacheAsync();
+```
+
+## Typed references
+
+Typed references remove repeated casts and make inspector usage safer.
+
+### Component references
+
+```csharp
+[SerializeField] private AssetReferenceComponent<PlayerController> player;
+[SerializeField] private AssetReferenceComponent<Rigidbody, IMovable> movable;
+```
+
+### ScriptableObject references
+
+```csharp
+[SerializeField] private AssetReferenceScriptableObject<GameBalance> balance;
+[SerializeField] private AssetReferenceScriptableObject<GameSettings, IGameSettings> settings;
+```
+
+Use typed references when the consuming code expects a concrete API, not just a raw `Object` or `GameObject`.
+
+## Pooling and preload
+
+Pooling helpers are useful when you repeatedly spawn the same addressable prefabs during gameplay.
+
+```csharp
+await projectileReference.AttachPoolLifeTimeAsync(lifeTime, preloadCount: 50);
+
+var pooled = await projectileReference.SpawnAsync(
+    lifeTime,
+    firePoint.position,
+    firePoint.rotation,
+    parent: null,
+    stayPosition: true);
+
+var active = await projectileReference.SpawnActiveAsync(
+    lifeTime,
+    firePoint.position,
+    firePoint.rotation);
+
+active.Despawn();
+```
+
+For scene-level warmup, use the preload helpers to prime pools before they are needed:
+
+```csharp
+public class BootstrapPreloader : MonoBehaviour
+{
+    [SerializeField] private AddressableMonoPreloader preloader;
+
+    private void Start()
+    {
+        preloader.WarmUp();
+    }
+}
+```
+
+## Remote addressables
+
+Use `AddressableRemoteConfig` when your project needs multiple remote content sources or runtime catalog switching.
+
+`AddressableRemoteConfig` lets you define:
+
+- whether remote loading is enabled
+- whether the first selected remote should remain permanent
+- endpoint probe retry count and timeout
+- a list of remote sources with `testUrl`, `remoteUrl`, and `remoteCatalogName`
+
+Example bootstrap:
 
 ```csharp
 using UniGame.AddressableTools.Runtime;
 using UniGame.Core.Runtime;
-using Cysharp.Threading.Tasks;
 
-public class ResourceLoader : MonoBehaviour
+public async UniTask<IAddressableLocationService> InitializeRemotes(
+    AddressableRemoteConfig config,
+    ILifeTime lifeTime)
 {
-    [SerializeField] private AssetReferenceGameObject prefabReference;
-    private LifeTimeDefinition _lifeTime = new();
-
-    private async void Start()
-    {
-        // Load addressable object and allow to unload it by lifeTime
-        var gameObject = await prefabReference.LoadAssetTaskAsync<GameObject>(_lifeTime);
-        
-        // create instance of the addressable object
-        var gameObjectInstance = await prefabReference
-            .LoadAssetInstanceTaskAsync<GameObject>(_lifeTime,destroyInstanceWithLifetime : true);
-        
-        var instance = await prefabReference.SpawnObjectAsync<GameObject>(
-            transform.position, 
-            transform, 
-            _lifeTime);
-            
-        // Object will be automatically released when _lifeTime terminates
-    }
-
-    private void OnDestroy() => _lifeTime.Terminate();
+    var service = await AddressableTools.CreateAddressableLocationService(config, lifeTime);
+    return service;
 }
 ```
 
-## Addressable Mono Components
+What this gives you:
 
-```csharp
-[SerializeField] private AssetReferenceComponent<PlayerController> playerReference;
+- remote registration from config
+- fastest endpoint selection based on `testUrl`
+- activation of the selected remote catalog
+- cached active remote between sessions
+- cache reset when the active remote changes
 
-private async void SpawnPlayer()
-{
-    var player = await playerReference.SpawnObjectAsync<PlayerController>(
-        spawnPoint.position,
-        parent: gameWorld,
-        lifeTime: _lifeTime,
-        activateOnSpawn : true);
-    
-    // player already contains the required component
-    player.Initialize();
-}
-```
+## Editor utilities
 
-# 🔧 Extensions
+The package includes a small set of maintenance commands under `UniGame/Addressables/`:
 
-```csharp
-// Load single resource
-var asset = await assetReference.LoadAssetTaskAsync<Texture2D>(lifeTime);
+- `Validate Addressables Errors`
+- `Fix Addressables Errors`
+- `Remove Empty Groups`
+- `Remove Missing References`
+- `Clean Library Cache`
+- `Clean Default Context Builder`
+- `Clean All`
+- `Print Variables`
 
-// Load with instance creation
-var instance = await assetReference.LoadAssetInstanceTaskAsync<GameObject>(
-    lifeTime, 
-    destroyInstanceWithLifetime: true);
+These tools are intended for common Addressables maintenance tasks, not for full editor workflow customization.
 
-// Create object in world
-var spawned = await assetReference.SpawnObjectAsync<GameObject>(
-    position: Vector3.zero,
-    parent: transform,
-    lifeTime: lifeTime);
+## Recommended usage patterns
 
-// Load list of resources
-var assets = await assetReferences.LoadAssetsTaskAsync<Sprite>(lifeTime);
-```
+- Always pass a valid `ILifeTime` when loading or spawning addressable content.
+- Use typed references when code depends on a specific component or API.
+- Warm up pools for high-frequency gameplay prefabs before the first use.
+- Keep remote source configuration centralized in `AddressableRemoteConfig`.
+- Use the editor commands to recover from broken Addressables state before editing settings manually.
 
-# Addressable Remotes
+## Notes
 
-tools for simplify management of remote addressable sources
+- This package is most useful when your project already uses UniTask and UniGame lifetime patterns.
+- Reactive extensions are optional and should stay out of the core integration unless the project already uses them.
+- Some inspector enhancements are enabled only when Odin Inspector is present.
 
-base remote addressable configuration:
+## License
 
-```csharp
-
-    /// <summary>
-    /// Define remote addressable sources
-    /// to activate configuration to scriptable asset into resources folder
-    /// don't forget to enable property in AddressableRemoteConfig
-    /// </summary>
-    [CreateAssetMenu(menuName = "UniGame/Addressables/AddressableRemoteConfig", fileName = "AddressableRemoteConfig")]
-    public class AddressableRemoteConfig : ScriptableObject
-    {
-        /// <summary>
-        /// Enable or disable addressable remote sources
-        /// </summary>
-        public bool enabled = true;
-        /// <summary>
-        /// amount of single url tries to check remote source availability
-        /// </summary>
-        public int urlTriesCount = 3;
-        /// <summary>
-        /// remote utl check timeout in seconds
-        /// </summary>
-        public int timeoutSeconds = 5;
-        /// <summary>
-        /// list of remote addressables sources
-        /// is no default value is set, then first remote will be used as default
-        /// </summary>
-#if ODIN_INSPECTOR
-        [ListDrawerSettings(ListElementLabelName = "@name")]
-#endif
-        public List<AddressableRemoteValue> remotes = new();
-    }
-````
-
-```csharp
-    public class AddressableRemoteValue
-    {
-        /// <summary>
-        /// Name of remote source, used for identification
-        /// </summary>
-        public string name;
-        /// <summary>
-        /// if false, then addressable tool will not use this remote source
-        /// </summary>
-        public bool enabled = true;
-        /// <summary>
-        /// test url for checking remote source availability
-        /// </summary>
-        public string testUrl;
-        /// <summary>
-        /// Remote url for addressable system source like CDN or remote server
-        /// </summary>
-        public string remoteUrl;
-        /// <summary>
-        /// Name of remote catalog, which will be used for addressable system
-        /// </summary>
-        public string remoteCatalogName;
-    }
-```
-
-## 🧰 Usage
-
-- Set up remote addressable configuration
-- Create `AddressableLocationService` instance for managing remote sources
-
-```csharp
-
-    AddressableRemoteConfig configuration;
-    LifeTime lifeTime = new()
-
-    /// Create addressable remote location service.
-    /// Register all remote locations from configuration.
-    var addressableLocationService ??= await AddressableTools
-        .CreateAddressableLocationService(configuration,lifeTime);
-
-    // Get best remote location registered in service
-    var bestLocation = await addressableLocationService
-        .SelectRemoteLocationAsync(tries:3,timeout:5); 
-    
-    if(bestLocation.success)
-    {
-        /// Activate remote location by url, the url should be registered in configuration
-        var urlActivateResult = addressableLocationService
-            .ActivateRemoteLocationAsync(bestLocation.url);
-    }
-    
-    // just for the demo select first remote location
-    var location = addressableLocationService.RemoteLocations.Values.FirstOrDefault();
-    /// Activate remote location by one of the registered locations
-    var activateResult = addressableLocationService
-        .ActivateRemoteLocationAsync(location);
-        
-```
-
-Remember:
-
-1. Write into `AddressableRemoteConfig` all your remote addressable sources, it's will be used for replacement and selection the best
-2. If you change remote addressable configuration for new remote, Addressable cache will be cleared
-
-# 🧩 Mono Tools
-
-## AddressableInstancer
-
-Component for automatic creation of objects from Addressable resources.
-
-```csharp
-public class AddressableInstancer : MonoBehaviour
-{
-    [SerializeField] private List<AddressableInstance> links;
-    [SerializeField] private bool createOnStart = true;
-    [SerializeField] private bool unloadOnDestroy = true;
-    
-    // Transform settings
-    [SerializeField] private Transform parent;
-    [SerializeField] private Vector3 position;
-    [SerializeField] private Quaternion rotation;
-}
-```
-
-### Working with Dependencies
-
-```csharp
-// Preload dependencies
-await assetReference.DownloadDependencyAsync(lifeTime);
-
-// Load with progress
-var progress = new Progress<float>(p => Debug.Log($"Progress: {p:P}"));
-await assetReference.LoadAssetTaskAsync<GameObject>(lifeTime, true, progress);
-
-// Clear cache
-await AddressableExtensions.ClearCacheAsync();
-```
-
-## 🎱 Object Pooling
-
-### Pool Creation
-
-```csharp
-// Create pool with preloading, all objects will be automatically released when the lifetime ends
-await bulletPrefab.AttachPoolLifeTimeAsync(lifeTime, preloadCount: 50);
-
-// Warm up pool
-await bulletPrefab.WarmUp(lifeTime, count: 20, activate: false);
-```
-
-### Using Pool
-
-```csharp
-// Create object from pool
-var bullet = await bulletPrefab.SpawnAsync(lifeTime, firePoint.position, firePoint.rotation);
-
-// Create active object
-var activeBullet = await bulletPrefab.SpawnActiveAsync(lifeTime, firePoint);
-
-activeBullet.Despawn(); // Return to pool
-```
-
-# 🛠️ Editor Tools
-
-## Validation and Fixing
-
-**Menu:** `UniGame/Addressables/`
-
-- `Validate Addressables Errors` - Check for errors
-- `Fix Addressables Errors` - Automatic fixing
-- `Remove Missing References` - Remove broken references
-- `Remote Empty Groups` - Remove empty groups
-
-# 📚 Examples
-
-## Level Loader
-
-```csharp
-public class LevelLoader : MonoBehaviour
-{
-    [SerializeField] private AssetReference levelScene;
-    [SerializeField] private List<AssetReferenceGameObject> levelPrefabs;
-    private LifeTimeDefinition _levelLifeTime = new();
-
-    public async UniTask LoadLevel()
-    {
-        // Load scene
-        var sceneInstance = await levelScene.LoadSceneTaskAsync(
-            _levelLifeTime, 
-            LoadSceneMode.Additive);
-    }
-
-    public void UnloadLevel() => _levelLifeTime.Release();
-}
-```
-
-# Notes
-
-### Lifecycle Management
-
-Always use `ILifeTime` for automatic resource cleanup:
-
-```csharp
-// ✅ Correct
-var asset = await reference.LoadAssetTaskAsync<GameObject>(lifeTime);
-
-// ❌ Incorrect - resource won't be released
-var asset = await reference.LoadAssetTaskAsync<GameObject>(null);
-```
-
-# 📄 License
-
-MIT License - see LICENSE file for details.
+MIT License. See `LICENSE` for details.

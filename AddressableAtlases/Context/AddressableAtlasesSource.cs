@@ -16,7 +16,7 @@
         protected override async UniTask<IAddressableAtlasService> CreateServiceInternalAsync(IContext context)
         {
             var config = await configuration
-                .LoadAssetInstanceTaskAsync(context.LifeTime,true);
+                .LoadInstanceTaskAsync(context.LifeTime,true);
 
             var service = new AddressableSpriteAtlasService(config.settings);
             
