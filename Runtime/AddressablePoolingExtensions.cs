@@ -27,36 +27,12 @@ namespace UniGame.AddressableTools.Runtime
             sourceObject.AttachPoolToLifeTime(lifeTime, true, preload);
             return source;
         }
-    
-        public static async UniTask<GameObject> Spawn(this AssetReferenceT<GameObject> assetReference, ILifeTime lifeTime)
-        {
-            var source = await assetReference.LoadAssetTaskAsync(lifeTime);
-            return source.Spawn();
-        }
-    
-        public static async UniTask<TComponent> Spawn<TComponent>(this AssetReferenceT<TComponent> assetReference, ILifeTime lifeTime)
-            where TComponent : Component
-        {
-            var source = await assetReference.LoadAssetTaskAsync(lifeTime);
-            return source.Spawn();
-        }
         
         public static async UniTask AttachPoolLifeTimeAsync(this AssetReferenceT<GameObject> objectSource,ILifeTime lifeTime,int preloadCount = 0)
         {
             var source = await objectSource.LoadAssetTaskAsync(lifeTime);
             source.CreatePool(preloadCount);
             source.AttachPoolToLifeTime(lifeTime, true);
-        }
-        
-        public static async UniTask<GameObject> SpawnAsync(this AssetReferenceT<GameObject> objectSource,
-            ILifeTime lifeTime,
-            Vector3 position,
-            Quaternion rotation, 
-            Transform parent = null, 
-            bool stayPosition = false)
-        {
-            var source = await objectSource.LoadAssetTaskAsync(lifeTime);
-            return source.Spawn(position,rotation,parent,stayPosition);
         }
 
         public static async UniTask<GameObject> WarmUpReference(this AssetReferenceGameObject view,
@@ -97,28 +73,44 @@ namespace UniGame.AddressableTools.Runtime
             
             pawn.Despawn();
         }
+
         
-        public static async UniTask<GameObject> SpawnActiveAsync(
-            this AssetReferenceT<GameObject> objectSource,
+        public static async UniTask<GameObject> Spawn(this AssetReferenceT<GameObject> assetReference, ILifeTime lifeTime = null)
+        {
+            var source = await assetReference.SpawnByReference(lifeTime,true);
+            return source;
+        }
+    
+        public static async UniTask<TComponent> Spawn<TComponent>(this AssetReferenceT<TComponent> assetReference, ILifeTime lifeTime = null)
+            where TComponent : Component
+        {
+            var source = await assetReference.SpawnByReference(lifeTime,true);
+            return source;
+        }
+
+        
+        public static async UniTask<GameObject> Spawn(this AssetReferenceT<GameObject> objectSource,
             ILifeTime lifeTime,
             Vector3 position,
             Quaternion rotation, 
             Transform parent = null, 
             bool stayPosition = false)
         {
-            var source = await objectSource.LoadAssetTaskAsync(lifeTime);
-            return source.Spawn(true,position,rotation,parent,stayPosition);
+            var source = await objectSource.SpawnByReference(position,rotation,parent,stayPosition,lifeTime);
+            return source;
         }
         
-        public static async UniTask<GameObject> SpawnActiveAsync(
-            this AssetReferenceT<GameObject> objectSource,
-            ILifeTime lifeTime, 
+                
+        public static async UniTask<GameObject> SpawnAsync(this AssetReferenceT<GameObject> objectSource,
+            ILifeTime lifeTime,
+            Vector3 position,
+            Quaternion rotation, 
             Transform parent = null, 
             bool stayPosition = false)
         {
-            var source = await objectSource.LoadAssetTaskAsync(lifeTime);
-            var sourceTransform = source.transform;
-            return source.Spawn(true,sourceTransform.position,sourceTransform.rotation,parent,stayPosition);
+            var source = await objectSource
+                .SpawnByReference(position,rotation,parent,stayPosition,lifeTime);
+            return source;
         }
 
         public static async UniTask<GameObject> SpawnAsync(this AssetReferenceT<GameObject> objectSource,
@@ -126,29 +118,31 @@ namespace UniGame.AddressableTools.Runtime
             Transform parent = null, 
             bool stayPosition = false)
         {
-            var source = await objectSource.LoadAssetTaskAsync(lifeTime);
-            return source.Spawn(parent,stayPosition);
+            var source = await objectSource
+                .SpawnByReference(Vector3.zero,Quaternion.identity,parent,stayPosition,lifeTime);
+            return source;
         }
     
-        public static async UniTask<T> SpawnAsync<T>(this AssetReferenceT<T> objectSource,ILifeTime lifeTime, Transform parent = null, bool stayPosition = false)
+        public static async UniTask<T> SpawnAsync<T>(this AssetReferenceT<T> objectSource,
+            ILifeTime lifeTime, 
+            Transform parent = null, 
+            bool stayPosition = false)
             where T : Component
         {
-            var source = await objectSource.LoadAssetTaskAsync(lifeTime);
-            return source.Spawn(parent,stayPosition);
+            var source = await objectSource
+                .SpawnByReference(Vector3.zero,Quaternion.identity,parent,stayPosition,lifeTime);
+            return source;
         }
         
-        public static async UniTask<T> SpawnAsync<T>(this AssetReferenceT<T> objectSource,ILifeTime lifeTime,Vector3 position,Quaternion rotation, Transform parent = null, bool stayPosition = false)
+        public static async UniTask<T> SpawnAsync<T>(this AssetReferenceT<T> objectSource,
+            ILifeTime lifeTime,
+            Vector3 position,Quaternion rotation,
+            Transform parent = null, bool stayPosition = false)
             where T : Component
         {
-            var source = await objectSource.LoadAssetTaskAsync(lifeTime);
-            return source.Spawn(position,rotation,parent,stayPosition);
-        }
-        
-        public static async UniTask<T> SpawnActiveAsync<T>(this AssetReferenceT<T> objectSource,ILifeTime lifeTime,Vector3 position,Quaternion rotation, Transform parent = null, bool stayPosition = false)
-            where T : Component
-        {
-            var source = await objectSource.LoadAssetTaskAsync(lifeTime);
-            return source.SpawnActive(position,rotation,parent,stayPosition);
+            var asset = await objectSource
+                .SpawnByReference(position,rotation,parent,stayPosition,lifeTime);
+            return asset;
         }
         
     }

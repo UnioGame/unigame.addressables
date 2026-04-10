@@ -11,7 +11,6 @@
     using Core.Runtime;
     using Core.Runtime.Extension;
     using UniCore.Runtime.ProfilerTools;
-    using UniGame.Runtime.Utils;
     using UnityEngine;
     using UnityEngine.AddressableAssets;
     using UnityEngine.Pool;
@@ -24,12 +23,12 @@
 #if UNITY_EDITOR
     using UnityEditor;
 #endif
-    
+
     public static class AddressableExtensions
     {
         private static Dictionary<string, UniTaskCompletionSource<AddressableLoadResult>> _assetTaskCache = new();
         private static Dictionary<string, UniTaskCompletionSource<AddressableLoadResult>> _dependenciesTaskCache = new();
-        
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         public static void ResetAddressableData()
         {
@@ -37,7 +36,7 @@
             _dependenciesTaskCache.Clear();
             _resourceLocations.Clear();
         }
-        
+
         private static object EvaluateKey(object obj)
         {
             if (obj is IKeyEvaluator evaluator)
@@ -46,7 +45,7 @@
         }
 
         private static HashSet<IResourceLocation> _resourceLocations = new();
-        
+
         public static bool GetResourceLocations(object key, List<IResourceLocation> locations)
         {
             var resourceLocators = Addressables.ResourceLocators;
@@ -55,7 +54,7 @@
             key = EvaluateKey(key);
 
             _resourceLocations.Clear();
-            
+
             foreach (var locator in resourceLocators)
             {
                 if (!locator.Locate(key, requiredType, out var locs))
@@ -65,10 +64,10 @@
 
             locations.AddRange(_resourceLocations);
             _resourceLocations.Clear();
-            
+
             return true;
         }
-        
+
         public static async UniTask<SceneInstance> LoadSceneTaskAsync(
             this AssetReference sceneReference,
             ILifeTime lifeTime,
@@ -83,11 +82,11 @@
                 return default;
             }
 
-            return await LoadSceneTaskAsync(sceneReference.AssetGUID, 
+            return await LoadSceneTaskAsync(sceneReference.AssetGUID,
                 lifeTime, loadSceneMode, activateOnLoad,
                 priority, progress);
         }
-        
+
         public static async UniTask<SceneInstance> LoadSceneTaskAsync(
             this string sceneReference,
             ILifeTime lifeTime,
@@ -109,7 +108,7 @@
             sceneHandle.AddTo(lifeTime);
 
             // await sceneHandle.ToUniTask(progress,cancellationToken:lifeTime.Token);
-            
+
             while (!sceneHandle.IsDone && !lifeTime.IsTerminated)
             {
                 progress?.Report(sceneHandle.PercentComplete);
@@ -118,14 +117,14 @@
 
             if (sceneHandle.Status == AsyncOperationStatus.Succeeded)
             {
-                lifeTime.AddCleanUpAction(() =>  Addressables
-                    .UnloadSceneAsync(sceneHandle,true)
+                lifeTime.AddCleanUpAction(() => Addressables
+                    .UnloadSceneAsync(sceneHandle, true)
                     .ToUniTask()
                     .Forget());
             }
 
-            return sceneHandle.Status == AsyncOperationStatus.Succeeded 
-                ? sceneHandle.Result 
+            return sceneHandle.Status == AsyncOperationStatus.Succeeded
+                ? sceneHandle.Result
                 : default;
         }
 
@@ -137,19 +136,9 @@
             reference.ReleaseAsset();
         }
 
-        public static async UniTask<List<TResult>> LoadScriptableAssetsTaskAsync<TResult>(
-            this IEnumerable<AssetReference> assetReference,
-            ILifeTime lifeTime)
-            where TResult : class
-        {
-            var container = new List<TResult>();
-            await assetReference.LoadAssetsTaskAsync<ScriptableObject, TResult, AssetReference>(container, lifeTime);
-            return container;
-        }
-        
         public static async UniTask<IEnumerable<TSource>> LoadAssetsTaskAsync<TSource, TAsset>(
             this IEnumerable<TAsset> assetReference,
-            List<TSource> resultContainer, 
+            List<TSource> resultContainer,
             ILifeTime lifeTime)
             where TAsset : AssetReference
             where TSource : Object
@@ -158,31 +147,31 @@
         }
 
         public static async UniTask<IList<T>> LoadAssetsTaskAsync<T>(
-            this string resource, 
+            this string resource,
             ILifeTime lifeTime,
             IProgress<float> progress = null)
         {
             var handle = Addressables.LoadAssetsAsync<T>(resource, null);
             handle.AddTo(lifeTime);
-            
-            return await handle.ToUniTask(progress,cancellationToken:lifeTime.Token);
+
+            return await handle.ToUniTask(progress, cancellationToken: lifeTime.Token);
         }
-        
+
         public static async UniTask<IList<T>> LoadAssetsTaskAsync<T>(
-            this IEnumerable resources, 
+            this IEnumerable resources,
             ILifeTime lifeTime,
             Addressables.MergeMode mode = Addressables.MergeMode.Union,
             IProgress<float> progress = null)
         {
-            var handle = Addressables.LoadAssetsAsync<T>(resources, null,mode,true);
+            var handle = Addressables.LoadAssetsAsync<T>(resources, null, mode, true);
             handle.AddTo(lifeTime);
-            var result = await handle.ToUniTask(progress,cancellationToken:lifeTime.Token);
+            var result = await handle.ToUniTask(progress, cancellationToken: lifeTime.Token);
             return result;
         }
-        
+
         public static async UniTask<IEnumerable<TResult>> LoadAssetsTaskAsync<TSource, TResult, TAsset>(
             this IEnumerable<TAsset> assetReference,
-            IList<TResult> resultContainer, 
+            IList<TResult> resultContainer,
             ILifeTime lifeTime)
             where TResult : class
             where TAsset : AssetReference
@@ -196,13 +185,20 @@
                 taskList.Add(assetTask);
             }
 
-            var result = await UniTask.WhenAll(taskList);
-            for (var j = 0; j < result.Length; j++)
+            try
             {
-                if (result[j] is TResult item) resultContainer.Add(item);
-            }
+                var result = await UniTask.WhenAll(taskList)
+                    .AttachExternalCancellation<TSource[]>(lifeTime.Token);
 
-            taskList.Despawn();
+                for (var j = 0; j < result.Length; j++)
+                {
+                    if (result[j] is TResult item) resultContainer.Add(item);
+                }
+            }
+            finally
+            {
+                taskList.Despawn();
+            }
 
             return resultContainer;
         }
@@ -232,13 +228,20 @@
                 taskList.Add(assetTask);
             }
 
-            var result = await UniTask.WhenAll(taskList);
-            for (var j = 0; j < result.Length; j++)
+            try
             {
-                if (result[j] is TResult item) resultContainer.Add(item);
-            }
+                var result = await UniTask.WhenAll(taskList)
+                    .AttachExternalCancellation<TSource[]>(lifeTime.Token);
 
-            taskList.Despawn();
+                for (var j = 0; j < result.Length; j++)
+                {
+                    if (result[j] is TResult item) resultContainer.Add(item);
+                }
+            }
+            finally
+            {
+                taskList.Despawn();
+            }
 
             return resultContainer;
         }
@@ -256,21 +259,10 @@
             Addressables.ClearDependencyCacheAsync(updatedIds);
             return updatedIds;
         }
-        
-        public static UniTask<T> InstantiateTaskAsync<T>(
-            this AssetReferenceT<T> assetReference,
-            ILifeTime lifeTime,
-            bool destroyInstanceWithLifetime,
-            bool downloadDependencies = false,
-            bool activateOnSpawn = true,
-            IProgress<float> progress = null)
-            where T : Object
-        {
-            return LoadInstanceTaskAsync(assetReference, lifeTime, 
-                destroyInstanceWithLifetime, downloadDependencies, activateOnSpawn, progress);
-        }
-        
-        public static UniTask<T> InstantiateTaskAsync<T>(
+
+        #region instance spawn
+
+        public static UniTask<T> SpawnByReference<T>(
             this AssetReferenceGameObject assetReference,
             ILifeTime lifeTime,
             bool destroyInstanceWithLifetime,
@@ -279,11 +271,11 @@
             IProgress<float> progress = null)
             where T : Component
         {
-            return LoadInstanceTaskAsync<T>(assetReference, lifeTime, 
+            return SpawnByReference<T>((AssetReference)assetReference, lifeTime,
                 destroyInstanceWithLifetime, downloadDependencies, activateOnSpawn, progress);
         }
 
-        public static UniTask<T> LoadInstanceTaskAsync<T>(
+        public static async UniTask<T> SpawnByReference<T>(
             this AssetReferenceT<T> assetReference,
             ILifeTime lifeTime,
             bool destroyInstanceWithLifetime,
@@ -292,14 +284,23 @@
             IProgress<float> progress = null)
             where T : Object
         {
-            var reference = assetReference as AssetReference;
-            return LoadInstanceTaskAsync<T>(reference, lifeTime,
-                destroyInstanceWithLifetime,downloadDependencies,
+            var asset = await SpawnByReference(
+                assetReference,
+                Vector3.zero,
+                Quaternion.identity,
+                null,
+                false,
+                lifeTime,
+                downloadDependencies,
                 activateOnSpawn,
+                destroyInstanceWithLifetime,
+                lifeTime.Token, 
                 progress);
+            
+            return asset;
         }
-        
-        public static async UniTask<T> LoadInstanceTaskAsync<T>(
+
+        public static async UniTask<T> SpawnByReference<T>(
             this AssetReferenceT<T> assetReference,
             ILifeTime lifeTime,
             bool destroyInstanceWithLifetime,
@@ -310,15 +311,18 @@
             where T : Object
         {
             var reference = assetReference as AssetReference;
-            var asset =await LoadInstanceTaskAsync<T>(reference, lifeTime,
-                destroyInstanceWithLifetime,downloadDependencies,
+            
+            var asset = await SpawnByReference<T>(reference, lifeTime,
+                destroyInstanceWithLifetime, downloadDependencies,
                 activateOnSpawn,
                 progress);
+            
             assetResult?.Invoke(asset);
+            
             return asset;
         }
 
-        public static async UniTask<T> LoadInstanceTaskAsync<T>(
+        public static async UniTask<T> SpawnByReference<T>(
             this AssetReference assetReference,
             ILifeTime lifeTime,
             bool destroyInstanceWithLifetime = true,
@@ -327,26 +331,24 @@
             IProgress<float> progress = null)
             where T : Object
         {
-            if (assetReference.RuntimeKeyIsValid() == false)
-            {
-                GameLog.Log($"[LoadAssetInstanceTaskAsync] AssetReference key {assetReference.AssetGUID} is NULL");
-                return default;
-            }
-            
-            var guid = assetReference.AssetGUID;
-            var asset = await SpawnReferenceAsync<T>(guid,Vector3.zero,
-                null,lifeTime,
+            var asset = await SpawnByReference<T>(
+                assetReference,
+                Vector3.zero,
+                Quaternion.identity,
+                null,
+                false,
+                lifeTime,
                 downloadDependencies,
                 activateOnSpawn,
                 lifeTime.Token, progress);
-            
-            if(destroyInstanceWithLifetime)
+
+            if (destroyInstanceWithLifetime && lifeTime != null)
                 asset.DestroyWith(lifeTime);
-            
+
             return asset;
         }
 
-        public static UniTask<T> SpawnReferenceAsync<T>(
+        public static UniTask<T> SpawnByReference<T>(
             this AssetReference reference,
             Vector3 position = default,
             Transform parent = null,
@@ -357,17 +359,18 @@
             IProgress<float> progress = null)
             where T : Object
         {
-            if (reference.RuntimeKeyIsValid() == false)
-                return default;
-            
-            return SpawnReferenceAsync<T>(reference.AssetGUID,
-                position,parent,
-                lifeTime, 
+            return SpawnByReference<T>(
+                reference,
+                position, 
+                Quaternion.identity,
+                parent,
+                false,
+                lifeTime,
                 activateOnSpawn,
-                downloadDependencies,token, progress);
+                downloadDependencies, token, progress);
         }
         
-        public static UniTask<T> SpawnReferenceAsync<T>(
+        public static UniTask<T> SpawnByReference<T>(
             this AssetReferenceT<T> reference,
             Vector3 position = default,
             Transform parent = null,
@@ -378,22 +381,87 @@
             IProgress<float> progress = null)
             where T : Object
         {
+            return SpawnByReference(
+                reference,
+                position,
+                Quaternion.identity,
+                parent,
+                false,
+                lifeTime,
+                activateOnSpawn,
+                downloadDependencies,
+                true,
+                token,
+                progress);
+        }
+
+        public static UniTask<T> SpawnByReference<T>(
+            this AssetReference reference,
+            Vector3 position,
+            Quaternion rotation,
+            Transform parent = null,
+            bool stayWorldPosition = false,
+            ILifeTime lifeTime = null,
+            bool activateOnSpawn = true,
+            bool downloadDependencies = false,
+            CancellationToken token = default,
+            IProgress<float> progress = null)
+            where T : Object
+        {
             if (reference.RuntimeKeyIsValid() == false)
                 return default;
-            
-            return SpawnReferenceAsync<T>(reference.AssetGUID,position,
+
+            return SpawnByReference<T>(
+                reference.AssetGUID,
+                position,
+                rotation,
                 parent,
+                stayWorldPosition,
                 lifeTime,
                 activateOnSpawn,
                 downloadDependencies,
                 token,
                 progress);
         }
-
-        public static async UniTask<T> SpawnReferenceAsync<T>(
-            this string reference,
-            Vector3 position = default,
+        
+        public static async UniTask<T> SpawnByReference<T>(
+            this AssetReferenceT<T> reference,
+            Vector3 position,
+            Quaternion rotation,
             Transform parent = null,
+            bool stayWorldPosition = false,
+            ILifeTime lifeTime = null,
+            bool activateOnSpawn = true,
+            bool downloadDependencies = false,
+            bool destroyInstanceWithLifetime = true,
+            CancellationToken token = default,
+            IProgress<float> progress = null)
+            where T : Object
+        {
+            var asset =await SpawnByReference<T>(
+                reference.AssetGUID,
+                position,
+                rotation,
+                parent,
+                stayWorldPosition,
+                lifeTime,
+                activateOnSpawn,
+                downloadDependencies,
+                token,
+                progress);
+            
+            if(destroyInstanceWithLifetime && lifeTime!=null && asset!=null)
+                asset.DestroyWith(lifeTime);
+                
+            return asset;
+        }
+
+        public static async UniTask<T> SpawnByReference<T>(
+            this string reference,
+            Vector3 position,
+            Quaternion rotation,
+            Transform parent = null,
+            bool stayWorldPosition = false,
             ILifeTime lifeTime = null,
             bool activateOnSpawn = true,
             bool downloadDependencies = false,
@@ -406,13 +474,14 @@
                 GameLog.Log($"[SpawnObjectAsync<T>] {typeof(T).Name} AssetReference key is NULL");
                 return default;
             }
-            
-            var result = await LoadAssetReferenceAsync<T>(reference, 
-                    lifeTime, 
-                    downloadDependencies,
-                    token,
-                    progress).AttachExternalCancellation(token);
-            
+
+            var result = await LoadAssetReferenceAsync<T>(
+                reference,
+                lifeTime,
+                downloadDependencies,
+                token,
+                progress);
+
             if (!result.Success)
             {
                 GameLog.LogError($"[SpawnObjectAsync<T>] {typeof(T).Name} AssetReference {reference} load error {result.Error}");
@@ -420,76 +489,98 @@
             }
 
             var asset = result.Result;
+            var incrementCounter = false;
             T instance = null;
-            
+            Object targetObject = null;
+            var useOwner = lifeTime != null;
+
             switch (asset)
             {
                 case GameObject gameObject:
                 {
                     var gameObjectInstance = gameObject.Spawn(
                         position,
-                        Quaternion.identity,
-                        parent);
+                        rotation,
+                        parent,
+                        stayWorldPosition,
+                        activateOnSpawn);
                     
+                    targetObject = gameObjectInstance;
                     instance = gameObjectInstance as T;
-                    lifeTime ??= gameObjectInstance.GetAssetLifeTime();
-                    if(activateOnSpawn) gameObjectInstance.SetActive(true);
+                    
                     break;
                 }
                 case Component component:
                 {
-                    var objectInstance = component
-                        .gameObject.Spawn(position, Quaternion.identity, parent);
-                    
+                    var objectInstance = component.gameObject.Spawn(position, 
+                        rotation, 
+                        parent, 
+                        stayWorldPosition,
+                        activateOnSpawn);
+                    targetObject = objectInstance;
                     instance = objectInstance.GetComponent<T>();
-                    lifeTime ??= objectInstance.GetAssetLifeTime();
-                    if(activateOnSpawn) objectInstance.SetActive(true);
+
                     break;
                 }
                 default:
                 {
                     instance = Object.Instantiate(asset);
+                    targetObject = instance;
                     break;
                 }
             }
-            
-            if(lifeTime!=null)
-                result.Handle.AddTo(lifeTime);
+
+            if (targetObject != null)
+            {
+                lifeTime ??= targetObject.GetAssetLifeTime();
+                incrementCounter = !result.Initial;
+            }
+
+            if (lifeTime != null && !useOwner)
+            {
+                result.Handle.AddTo(lifeTime,incrementCounter);
+            }
 
             return instance;
         }
 
-        public static UniTask<GameObject[]> SpawnReferenceAsync(
+        public static UniTask<GameObject[]> SpawnByReference(
             this AssetReference reference,
             int count,
             Vector3 position = default,
+            Quaternion rotation = default,
             Transform parent = null,
+            bool stayWorldPosition = false,
             ILifeTime lifeTime = null,
             bool activateOnSpawn = true,
             bool downloadDependencies = false,
             CancellationToken token = default,
             IProgress<float> progress = null)
         {
-            if (!reference.RuntimeKeyIsValid()) 
+            if (!reference.RuntimeKeyIsValid())
                 return UniTask.FromResult(Array.Empty<GameObject>());
-            
-            return SpawnReferenceAsync(
-                reference.AssetGUID, 
-                count, 
-                position, 
-                parent, 
-                lifeTime, 
+
+            return SpawnByReference(
+                reference.AssetGUID,
+                count,
+                position,
+                rotation,
+                parent,
+                stayWorldPosition,
+                lifeTime,
                 activateOnSpawn,
-                downloadDependencies, 
-                token, 
+                downloadDependencies,
+                token,
                 progress);
         }
 
-        public static async UniTask<GameObject[]> SpawnReferenceAsync(
+        public static async UniTask<GameObject[]> SpawnByReference(
             this string reference,
             int count,
             Vector3 position = default,
+            Quaternion rotation = default,
             Transform parent = null,
+            bool stayWorldPosition = false,
             ILifeTime lifeTime = null,
             bool activateOnSpawn = true,
             bool downloadDependencies = false,
@@ -499,53 +590,31 @@
             if (string.IsNullOrEmpty(reference))
             {
                 GameLog.LogError("[SpawnObjectsAsync] AssetReference key is NULL");
-                return default;
+                return Array.Empty<GameObject>();
             }
-            
-            if(count<=0) return Array.Empty<GameObject>();
-            
-            var result = await LoadAssetReferenceAsync<GameObject>(
-                    reference, 
-                    lifeTime, 
-                    downloadDependencies,
-                    token,
-                    progress);
-            
-            if (!result.Success)
-            {
-                GameLog.Log($"[LoadAssetInstanceTaskAsync] load {reference} failed {result.Error}",Color.red);
-                return default;
-            }
-            
-            if(lifeTime!=null)
-                result.Handle.AddTo(lifeTime);
 
-            var asset = result.Result;
+            var taskList = ListPool<UniTask<GameObject>>.Get();
+            taskList.Clear();
             
-            var pawns = await asset.SpawnAsync(
-                count,
-                position,
-                Quaternion.identity,
-                parent,token:token);
-
-            var instance = pawns.Items;
-                    
-            for (var i = 0; i < pawns.Length; i++)
+            for (int i = 0; i < count; i++)
             {
-                var o = pawns.Items[i];
+                var task = SpawnByReference<GameObject>(reference,
+                    position,rotation,parent,
+                    stayWorldPosition,lifeTime,
+                    activateOnSpawn,downloadDependencies,
+                    token,progress);
                 
-                if(activateOnSpawn) o.SetActive(true);
-                if (lifeTime != null) continue;
-                
-                var objectLifeTime = o.GetAssetLifeTime();
-                result.Handle.AddTo(objectLifeTime,i>0);
+                taskList.Add(task);
             }
-            
-            return instance;
+
+            var result = await UniTask.WhenAll(taskList);
+            return result;
         }
-        
+
+        #endregion
+
 #if !UNITY_WEBGL
-        
+
         public static T LoadAssetInstanceForCompletion<T>(
             this AssetReferenceT<T> assetReference,
             ILifeTime lifeTime,
@@ -558,7 +627,7 @@
             var isPawn = false;
 
             Object instance = null;
-            
+
             switch (asset)
             {
                 case Component component:
@@ -575,16 +644,16 @@
             }
 
             if (!destroyInstanceWithLifetime) return instance as T;
-            
+
             if (isPawn)
             {
                 instance.DestroyWith(lifeTime);
             }
             else
             {
-                instance.DestroyWith(lifeTime); 
+                instance.DestroyWith(lifeTime);
             }
-            
+
             return instance as T;
         }
 
@@ -601,28 +670,28 @@
             where T : Object
         {
             if (lifeTime.IsTerminated) return default(T);
-            
+
             if (assetReference == null || assetReference.RuntimeKeyIsValid() == false)
             {
                 GameLog.LogError($"AssetReference key is NULL {assetReference}");
                 return null;
             }
-            
+
             var isComponent = typeof(T).IsComponent();
 
-            Object asset = isComponent 
+            Object asset = isComponent
                 ? LoadAssetSync<GameObject>(assetReference, lifeTime)
                 : LoadAssetSync<T>(assetReference, lifeTime);
-            
+
             if (asset == null) return default(T);
 
-            var result = asset is GameObject gameObjectAsset && isComponent ?
-                gameObjectAsset.GetComponent<T>() :
-                asset as T;
-            
+            var result = asset is GameObject gameObjectAsset && isComponent
+                ? gameObjectAsset.GetComponent<T>()
+                : asset as T;
+
             return result;
         }
-        
+
         private static T LoadAssetSync<T>(
             this AssetReference assetReference,
             ILifeTime lifeTime)
@@ -634,7 +703,7 @@
             var asset = handle.WaitForCompletion();
             return asset;
         }
-        
+
 #endif
 
 #if UNITY_EDITOR
@@ -649,7 +718,7 @@
 #endif
             return false;
         }
-        
+
         public static async UniTask<bool> ClearCacheAsync()
         {
             var handle = Addressables.CleanBundleCache();
@@ -662,7 +731,7 @@
             Type type = null,
             IProgress<float> process = null)
         {
-            await DownloadDependenciesAsync(targets, lifeTime, Addressables.MergeMode.Union, type,process);
+            await DownloadDependenciesAsync(targets, lifeTime, Addressables.MergeMode.Union, type, process);
         }
 
         /// <summary>
@@ -676,22 +745,22 @@
             IProgress<float> process = null)
         {
             var locators = await Addressables
-                .LoadResourceLocationsAsync(targets,mergeMode,type)
+                .LoadResourceLocationsAsync(targets, mergeMode, type)
                 .ToUniTask();
-            
+
             var handle = Addressables.DownloadDependenciesAsync(locators, mergeMode);
-            
-            if(handle.IsDone) return;
+
+            if (handle.IsDone) return;
 
             handle.AddTo(lifeTime);
-            
+
             var downloadSize = handle.GetDownloadStatus().TotalBytes;
             if (downloadSize <= 0)
             {
-                GameLog.LogFormat("Addressable: {0} :: nothing to download",nameof(DownloadDependenciesAsync));
+                GameLog.LogFormat("Addressable: {0} :: nothing to download", nameof(DownloadDependenciesAsync));
                 return;
             }
-            
+
             await handle.ToUniTask(process)
                 .AttachExternalCancellation(lifeTime.Token)
                 .SuppressCancellationThrow();
@@ -709,9 +778,9 @@
             var resource = ListPool<object>.Get();
             resource.Clear();
             resource.Add(targets);
-            
-            await DownloadDependenciesAsync(resource,lifeTime,type,process);
-            
+
+            await DownloadDependenciesAsync(resource, lifeTime, type, process);
+
             resource.Despawn();
         }
 
@@ -728,12 +797,12 @@
             var resource = ListPool<object>.Get();
             resource.Clear();
             resource.Add(targets);
-            
-            await DownloadDependenciesAsync(resource,lifeTime,mode,type,process);
-            
+
+            await DownloadDependenciesAsync(resource, lifeTime, mode, type, process);
+
             resource.Despawn();
         }
-        
+
         /// <summary>
         /// download single dependencies to the cache
         /// </summary>
@@ -745,22 +814,22 @@
             var resource = ListPool<object>.Get();
             resource.Clear();
             resource.Add(targets);
-            
-            await DownloadDependenciesAsync(resource,lifeTime,mode,null,process);
-            
+
+            await DownloadDependenciesAsync(resource, lifeTime, mode, null, process);
+
             resource.Despawn();
         }
 
-        
+
         public static async UniTask<T> LoadAssetTaskAsync<T>(
-            this AssetReference assetReference, 
-            ILifeTime lifeTime, 
+            this AssetReference assetReference,
+            ILifeTime lifeTime,
             bool downloadDependencies = false,
             IProgress<float> progress = null)
             where T : Object
         {
             if (lifeTime.IsTerminated) return default(T);
-            
+
             if (assetReference == null || assetReference.RuntimeKeyIsValid() == false)
             {
                 GameLog.LogError($"AssetReference key is NULL {assetReference}");
@@ -773,22 +842,22 @@
         }
 
         public static async UniTask<T> LoadAssetTaskAsync<T>(
-            this string referenceKey, 
-            ILifeTime lifeTime, 
+            this string referenceKey,
+            ILifeTime lifeTime,
             bool downloadDependencies = false,
             IProgress<float> progress = null)
         {
             if (lifeTime.IsTerminated) return default;
 
-            var result = await LoadAssetReferenceAsync<T>(referenceKey, lifeTime, 
-                downloadDependencies,lifeTime.Token, progress);
-            
+            var result = await LoadAssetReferenceAsync<T>(referenceKey, lifeTime,
+                downloadDependencies, lifeTime.Token, progress);
+
             return result.Result;
         }
-        
+
         public static async UniTask<T> LoadAssetInstanceAsync<T>(
-            this string referenceKey, 
-            ILifeTime lifeTime, 
+            this string referenceKey,
+            ILifeTime lifeTime,
             bool downloadDependencies = false,
             IProgress<float> progress = null) where T : Object
         {
@@ -798,7 +867,7 @@
             return instance;
         }
 
-        public static void NotifyProgress(IAsyncHandleStatus progressData,IProgress<HandleStatus> progress )
+        public static void NotifyProgress(IAsyncHandleStatus progressData, IProgress<HandleStatus> progress)
         {
             progress.Report(new HandleStatus()
             {
@@ -810,13 +879,15 @@
             });
         }
 
-        public static async UniTask<T> ConvertToUniTask<T>(this AsyncOperationHandle<T> handle, ILifeTime lifeTime) where T : class
+        public static async UniTask<T> ConvertToUniTask<T>(this AsyncOperationHandle<T> handle, ILifeTime lifeTime)
+            where T : class
         {
             handle.AddTo(lifeTime);
             return await handle.ToUniTask();
         }
 
-        public static async UniTask<TResult> LoadAssetTaskApiAsync<TAsset, TResult>(this AssetReference assetReference, ILifeTime lifeTime)
+        public static async UniTask<TResult> LoadAssetTaskApiAsync<TAsset, TResult>(this AssetReference assetReference,
+            ILifeTime lifeTime)
             where TAsset : Object
             where TResult : class
         {
@@ -842,7 +913,7 @@
             var result = await LoadAssetTaskAsync<ScriptableObject>(assetReference as AssetReference, lifeTime);
             return result as T;
         }
-        
+
         public static async UniTask<TApi> LoadAssetTaskAsync<T, TApi>(
             this AssetReferenceScriptableObject<T, TApi> assetReference,
             ILifeTime lifeTime)
@@ -868,40 +939,40 @@
             return await LoadAssetTaskAsync<T>(assetReference as AssetReference, lifeTime);
         }
 
-        public static async UniTask<GameObject> LoadGameObjectTaskAsync(this AssetReference assetReference, ILifeTime lifeTime)
+        public static async UniTask<GameObject> LoadGameObjectTaskAsync(this AssetReference assetReference,
+            ILifeTime lifeTime)
         {
             var result = await LoadAssetTaskAsync<GameObject>(assetReference, lifeTime);
             return result;
         }
-        
-        public static async UniTask<T> LoadGameObjectTaskAsync<T>(this AssetReferenceT<T> assetReference, ILifeTime lifeTime)
+
+        public static async UniTask<T> LoadGameObjectTaskAsync<T>(this AssetReferenceT<T> assetReference,
+            ILifeTime lifeTime)
             where T : Component
         {
             var result = await LoadAssetTaskAsync<GameObject>(assetReference, lifeTime);
-            return result ?
-                result.GetComponent<T>() :
-                null;
+            return result ? result.GetComponent<T>() : null;
         }
 
-        public static async UniTask<T> LoadGameObjectTaskAsync<T>(this AssetReference assetReference, ILifeTime lifeTime)
+        public static async UniTask<T> LoadGameObjectTaskAsync<T>(this AssetReference assetReference,
+            ILifeTime lifeTime)
             where T : class
         {
             var result = await LoadAssetTaskAsync<GameObject>(assetReference, lifeTime);
-            return result ?
-                result.GetComponent<T>() :
-                null;
+            return result ? result.GetComponent<T>() : null;
         }
 
-        public static async UniTask<TAsset> LoadAddressableByResourceAsync<TAsset>(this string resource, ILifeTime lifeTime)
+        public static async UniTask<TAsset> LoadAddressableByResourceAsync<TAsset>(this string resource,
+            ILifeTime lifeTime)
         {
             var asset = await Addressables
                 .LoadAssetAsync<TAsset>(resource)
                 .AddToAsUniTask(lifeTime);
             return asset;
         }
-        
+
         public static async UniTask<AddressableLoadResult<T>> LoadAssetReferenceAsync<T>(
-            this string referenceKey, 
+            this string referenceKey,
             ILifeTime lifeTime = null,
             bool downloadDependencies = false,
             CancellationToken token = default,
@@ -912,13 +983,13 @@
                 GameLog.LogError($"AssetReference key is NULL {referenceKey}");
                 return AddressableLoadResult<T>.FailedResourceResult;
             }
-            
+
             var isComponent = typeof(T).IsComponent();
 
-            var loadTask = isComponent 
-                ? LoadReferenceAsync<GameObject>(referenceKey,token,lifeTime, downloadDependencies,progress)
-                : LoadReferenceAsync<T>(referenceKey,token,lifeTime, downloadDependencies,progress);
-            
+            var loadTask = isComponent
+                ? LoadReferenceAsync<GameObject>(referenceKey, token, lifeTime, downloadDependencies, progress)
+                : LoadReferenceAsync<T>(referenceKey, token, lifeTime, downloadDependencies, progress);
+
             var loadResult = await loadTask.AttachExternalCancellation(token);
             var asset = loadResult.Result;
 
@@ -928,19 +999,20 @@
                 GameObject gameObjectAsset when isComponent => gameObjectAsset.GetComponent<T>(),
                 _ => default
             };
-            
+
             var result = new AddressableLoadResult<T>()
             {
                 Handle = loadResult.Handle,
                 Result = resultValue,
                 Success = loadResult.Status == AddressableLoadStatus.Succeeded,
                 Error = string.Empty,
+                Initial = loadResult.Initial,
             };
-            
+
             return result;
         }
 
-        
+
         /// <summary>
         /// download dependency by reference and bind to lifetime
         /// </summary>
@@ -955,69 +1027,69 @@
             {
                 var result = await taskSource.Task.AttachExternalCancellation(token);
                 //if cache valid return it
-                if (result.Status == AddressableLoadStatus.Succeeded && 
+                if (result.Status == AddressableLoadStatus.Succeeded &&
                     !autoReleaseHandle &&
                     result.Handle.IsValid())
                 {
-                    result.Handle.AddTo(lifeTime,true);
+                    result.Handle.AddTo(lifeTime, true);
                     return AsyncOperationStatus.Succeeded;
                 }
             }
-            
+
             taskSource = new UniTaskCompletionSource<AddressableLoadResult>();
             _dependenciesTaskCache[resource] = taskSource;
 
             var taskResult = new AddressableLoadResult();
-           
+
             var dependencies = Addressables
-                .DownloadDependenciesAsync(resource,false);
-            
+                .DownloadDependenciesAsync(resource, false);
+
             taskResult.Status = AddressableLoadStatus.Loading;
             taskResult.Handle = dependencies;
-            
+
             var isCancelled = await dependencies
-                .ToUniTask(progress,PlayerLoopTiming.PostLateUpdate,token)
+                .ToUniTask(progress, PlayerLoopTiming.PostLateUpdate, token)
                 .SuppressCancellationThrow();
 
             if (isCancelled)
             {
                 taskResult.Status = AddressableLoadStatus.Failed;
-                Addressables.Release(dependencies);  
+                Addressables.Release(dependencies);
                 taskSource.TrySetResult(taskResult);
                 return AsyncOperationStatus.Failed;
             }
-            
+
             var status = dependencies.Status;
 
             if (status == AsyncOperationStatus.Succeeded)
             {
                 if (autoReleaseHandle)
                 {
-                    Addressables.Release(dependencies);  
+                    Addressables.Release(dependencies);
                 }
                 else
                 {
                     dependencies.AddTo(lifeTime);
                 }
             }
-            
-            taskResult.Status = status == AsyncOperationStatus.Succeeded 
-                ? AddressableLoadStatus.Succeeded 
+
+            taskResult.Status = status == AsyncOperationStatus.Succeeded
+                ? AddressableLoadStatus.Succeeded
                 : AddressableLoadStatus.Failed;
-            
+
             taskSource.TrySetResult(taskResult);
-            
+
             return status;
         }
-  
+
         private static AsyncOperationHandle<TResult> LoadAssetAsyncOrExposeHandle<TResult>(
             this AssetReference assetReference, out bool yetRequested)
             where TResult : class
         {
             yetRequested = assetReference.OperationHandle.IsValid();
-            var handle = yetRequested ? 
-                assetReference.OperationHandle.Convert<TResult>():
-                assetReference.LoadAssetAsync<TResult>();
+            var handle = yetRequested
+                ? assetReference.OperationHandle.Convert<TResult>()
+                : assetReference.LoadAssetAsync<TResult>();
             return handle;
         }
 
@@ -1047,42 +1119,42 @@
             }
 #endif
             if (downloadDependencies)
-                await DownloadDependenciesTaskAsync(reference,token,lifeTime, true, progress);
-            
+                await DownloadDependenciesTaskAsync(reference, token, lifeTime, true, progress);
+
             if (_assetTaskCache.TryGetValue(reference, out var cachedTask))
             {
                 var taskResult = await cachedTask.Task.AttachExternalCancellation(token);
+                taskResult.Initial = false;
                 
                 var resourceHandle = taskResult.Handle;
                 var isValidHandle = resourceHandle.IsValid();
-                
+
                 //if result still valid when use existing result
                 if (isValidHandle && taskResult is { Status: AddressableLoadStatus.Succeeded, Result: not null })
                 {
-                    taskResult.Handle.AddTo(lifeTime,true);
+                    taskResult.Handle.AddTo(lifeTime, true);
                     return taskResult;
                 }
             }
-            
+
             var taskCompletionSource = new UniTaskCompletionSource<AddressableLoadResult>();
             _assetTaskCache[reference] = taskCompletionSource;
-            
+
             var handle = Addressables.LoadAssetAsync<T>(reference);
-            
+
             var result = new AddressableLoadResult()
             {
                 Handle = handle,
                 Result = null,
                 Status = AddressableLoadStatus.Loading,
             };
-            
+
             var loadResult = await handle
-                .ToUniTask(progress,PlayerLoopTiming.Update,token)
+                .ToUniTask(progress, PlayerLoopTiming.Update, token, autoReleaseWhenCanceled: true)
                 .SuppressCancellationThrow();
 
-            if (loadResult.IsCanceled || loadResult.Result == null)
+            if (loadResult.IsCanceled)
             {
-                ReleaseHandle(handle).Forget();
                 result.Status = AddressableLoadStatus.Failed;
             }
             else
@@ -1092,24 +1164,25 @@
                     : AddressableLoadStatus.Failed;
                 result.Status = status;
                 result.Result = loadResult.Result;
-                
-                if (result.Status == AddressableLoadStatus.Succeeded) 
+
+                if (result.Status == AddressableLoadStatus.Succeeded)
                     handle.AddTo(lifeTime);
             }
-            
+
+            result.Initial = true;
             taskCompletionSource.TrySetResult(result);
-            
+
             return result;
         }
 
-        
-        
+
         #region lifetime
 
-        public static AsyncOperationHandle<T> AddTo<T>(this AsyncOperationHandle<T> handle, ILifeTime lifeTime, bool incrementRefCount = false)
+        public static AsyncOperationHandle<T> AddTo<T>(this AsyncOperationHandle<T> handle, ILifeTime lifeTime,
+            bool incrementRefCount = false)
         {
-            if(lifeTime == null) return handle;
-            
+            if (lifeTime == null) return handle;
+
             if (incrementRefCount)
                 Addressables.ResourceManager.Acquire(handle);
 
@@ -1117,35 +1190,36 @@
             {
                 Handle = handle
             };
-            
+
             lifeTime.AddCleanUpAction(addressableReference.Release);
-            
+
             return handle;
         }
-        
-        public static AsyncOperationHandle AddTo(this AsyncOperationHandle handle, ILifeTime lifeTime, bool incrementRefCount)
+
+        public static AsyncOperationHandle AddTo(this AsyncOperationHandle handle, ILifeTime lifeTime,
+            bool incrementRefCount)
         {
-            if(lifeTime == null) return handle;
-            
+            if (lifeTime == null) return handle;
+
             if (incrementRefCount)
                 Addressables.ResourceManager.Acquire(handle);
-            
+
             var addressableReference = new AddressableHandleReference()
             {
                 Handle = handle
             };
-            
+
             lifeTime.AddCleanUpAction(addressableReference.Release);
-            
+
             return handle;
         }
 
         public static UniTask<TAsset> AddToAsUniTask<TAsset>(
-            this AsyncOperationHandle<TAsset> handle, 
-            ILifeTime lifeTime, 
+            this AsyncOperationHandle<TAsset> handle,
+            ILifeTime lifeTime,
             bool incrementRefCount = true)
         {
-            var operation = handle.AddTo(lifeTime,incrementRefCount);
+            var operation = handle.AddTo(lifeTime, incrementRefCount);
             return operation.ToUniTask();
         }
 
@@ -1155,14 +1229,14 @@
             await UniTask.SwitchToMainThread();
             Addressables.Release(handle);
         }
-        
+
         public static async UniTask ReleaseHandle(this AsyncOperationHandle handle)
         {
             if (handle.IsValid() == false) return;
             await UniTask.SwitchToMainThread();
             Addressables.Release(handle);
         }
-        
+
         public static ILifeTime AddTo<TAsset>(this AssetReferenceT<TAsset> reference, ILifeTime lifeTime)
             where TAsset : Object
         {
@@ -1173,15 +1247,15 @@
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static AsyncOperationHandle AddTo(this AsyncOperationHandle handle, ILifeTime lifeTime)
         {
-            if(lifeTime == null) return handle;
-            
+            if (lifeTime == null) return handle;
+
             var addressableReference = new AddressableHandleReference()
             {
                 Handle = handle
             };
-            
+
             lifeTime.AddCleanUpAction(addressableReference.Release);
-            
+
             return handle;
         }
 
@@ -1191,9 +1265,7 @@
             return lifeTime;
         }
 
-        
         #endregion
-        
     }
 
     public struct AddressableLoadResult
@@ -1202,10 +1274,11 @@
         {
             Status = AddressableLoadStatus.Failed
         };
-        
+
         public AsyncOperationHandle Handle;
         public object Result;
         public AddressableLoadStatus Status;
+        public bool Initial;
     }
 
     public enum AddressableLoadStatus : byte
@@ -1215,12 +1288,12 @@
         Failed,
         Succeeded
     }
-    
-    
+
+
     public struct AddressableLoadResult<T>
     {
         public const string FailedMessage = "Failed to load asset";
-        
+
         public static readonly AddressableLoadResult<T> FailedResourceResult = new()
         {
             Handle = default,
@@ -1228,7 +1301,7 @@
             Success = false,
             Error = FailedMessage,
         };
-        
+
         public static readonly AddressableLoadResult<T> CompleteResourceResult = new()
         {
             Handle = default,
@@ -1236,9 +1309,10 @@
             Success = true,
             Error = string.Empty,
         };
-        
+
         public AsyncOperationHandle Handle;
         public T Result;
+        public bool Initial;
         public bool Success;
         public string Error;
     }
@@ -1246,17 +1320,17 @@
     public struct AddressableHandleReference<T>
     {
         public AsyncOperationHandle<T> Handle;
-        
+
         public void Release()
         {
             Handle.ReleaseHandle().Forget();
         }
     }
-    
+
     public struct AddressableHandleReference
     {
         public AsyncOperationHandle Handle;
-        
+
         public void Release()
         {
             Handle.ReleaseHandle().Forget();
@@ -1265,21 +1339,19 @@
 
     public static class GameObjectAddressableExtensions
     {
-        
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static UniTask<ObjectsItemResult> SpawnAsync(
-            this GameObject prototype, 
+            this GameObject prototype,
             int count,
             Vector3 position,
-            Quaternion rotation, 
+            Quaternion rotation,
             Transform parent = null,
             CancellationToken token = default)
         {
             var pawn = ObjectPool
-                .SpawnAsync(prototype,count, position, rotation, parent, token);
-            
+                .SpawnAsync(prototype, count, position, rotation, parent, token);
+
             return pawn;
         }
-        
     }
 }
