@@ -291,8 +291,8 @@
                 null,
                 false,
                 lifeTime,
-                downloadDependencies,
                 activateOnSpawn,
+                downloadDependencies,
                 destroyInstanceWithLifetime,
                 lifeTime.Token, 
                 progress);
