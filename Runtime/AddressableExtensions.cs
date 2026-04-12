@@ -271,8 +271,12 @@
             IProgress<float> progress = null)
             where T : Component
         {
-            return SpawnByReference<T>((AssetReference)assetReference, lifeTime,
-                destroyInstanceWithLifetime, downloadDependencies, activateOnSpawn, progress);
+            return SpawnByReference<T>((AssetReference)assetReference, 
+                lifeTime,
+                destroyInstanceWithLifetime, 
+                downloadDependencies, 
+                activateOnSpawn, 
+                progress);
         }
 
         public static async UniTask<T> SpawnByReference<T>(
@@ -312,8 +316,10 @@
         {
             var reference = assetReference as AssetReference;
             
-            var asset = await SpawnByReference<T>(reference, lifeTime,
-                destroyInstanceWithLifetime, downloadDependencies,
+            var asset = await SpawnByReference<T>(
+                reference, lifeTime,
+                destroyInstanceWithLifetime, 
+                downloadDependencies,
                 activateOnSpawn,
                 progress);
             
@@ -338,8 +344,8 @@
                 null,
                 false,
                 lifeTime,
-                downloadDependencies,
                 activateOnSpawn,
+                downloadDependencies,
                 lifeTime.Token, progress);
 
             if (destroyInstanceWithLifetime && lifeTime != null)
