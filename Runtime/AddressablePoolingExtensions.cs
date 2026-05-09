@@ -142,14 +142,10 @@ namespace UniGame.AddressableTools.Runtime
             return source;
         }
     
-        public static async UniTask<T> Spawn<T>(this AssetReferenceT<T> objectSource,
-            ILifeTime lifeTime, 
-            Transform parent, 
-            bool stayPosition)
+        public static async UniTask<T> Spawn<T>(this AssetReferenceT<T> objectSource, Transform parent, bool stayPosition)
             where T : Component
         {
-            var source = await objectSource
-                .SpawnByReference(Vector3.zero,Quaternion.identity,parent,stayPosition,lifeTime);
+            var source = await objectSource.SpawnByReference(Vector3.zero,Quaternion.identity,parent,stayPosition,true);
             return source;
         }
         
