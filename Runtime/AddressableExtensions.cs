@@ -442,14 +442,12 @@
             IProgress<float> progress = null)
             where T : Object
         {
-            if (reference.RuntimeKeyIsValid() == false)
+            if (!reference.RuntimeKeyIsValid())
                 return default;
 
-            var loadLifeTime = new LifeTime();
-            
             var asset = await SpawnByReference<T>(
                 reference.AssetGUID,
-                loadLifeTime,
+                null,
                 position,
                 rotation,
                 parent,
@@ -458,16 +456,6 @@
                 downloadDependencies,
                 token,
                 progress);
-
-            if (asset == null)
-            {
-                loadLifeTime.Terminate();
-            }
-            else
-            {
-                var assetLifeTime = asset.GetAssetLifeTime();
-                loadLifeTime.AddTo(assetLifeTime);
-            }
             
             return asset;
         }
@@ -660,7 +648,7 @@
                 token,
                 progress);
             
-            if(asset!=null && destroyInstanceWithLifetime)
+            if(asset!=null && lifeTime!=null && destroyInstanceWithLifetime)
                 asset.DestroyWith(lifeTime);
 
             return asset;
@@ -732,7 +720,6 @@
 
             asset = result.Result;
 
-            var incrementCounter = false;
             Object targetObject = null;
             GameObject gameObjectInstance = null;
 
@@ -770,11 +757,12 @@
                     break;
                 }
             }
-
+            
             if (gameObjectInstance != null)
             {
+                var incrementCounter = !(lifeTime == null && result.IsInitial);
                 var assetLifeTime = gameObjectInstance.GetAssetLifeTime();
-                result.Handle.AddTo(assetLifeTime, true);
+                result.Handle.AddTo(assetLifeTime, incrementCounter);
             }
 
             return targetObject as T;
@@ -1233,7 +1221,8 @@
             {
                 Handle = loadResult.Handle,
                 Result = resultValue,
-                Success = loadResult.Status == AddressableLoadStatus.Succeeded,
+                Success = loadResult.Success,
+                IsInitial = loadResult.IsInitial,
                 Error = string.Empty,
             };
 
@@ -1333,27 +1322,28 @@
 #endif
         }
 
-        public static async UniTask<AddressableLoadState> AttachLifeTimeToReference(
+        public static async UniTask<AddressableLoadResult> AttachLifeTimeToReference(
             this AssetReference reference,
             ILifeTime lifeTime,
             bool downloadDependencies = false,
             IProgress<float> progress = null)
         {
             if (!reference.RuntimeKeyIsValid())
-            {
-                return new AddressableLoadState()
-                {
-                    Result = null,
-                    Status = AddressableLoadStatus.Failed,
-                };
-            }
+                return AddressableLoadResult.FailedResult;
 
             var guid = reference.AssetGUID;
 
             if (_assetTaskCache.TryGetValue(guid, out var state) && state.Handle.IsValid())
             {
                 state.Handle.AddTo(lifeTime, true);
-                return state;
+                return new AddressableLoadResult()
+                {
+                    Error = string.Empty,
+                    Handle = state.Handle,
+                    Result = AddressableLoadStatus.Succeeded,
+                    Success = true,
+                    IsInitial = false,
+                };
             }
 
             var loadResult = await LoadReferenceAsync<Object>(
@@ -1364,7 +1354,7 @@
             return loadResult;
         }
 
-        public static async UniTask<AddressableLoadState> AttachLifeTimeToReference(
+        public static async UniTask<AddressableLoadResult> AttachLifeTimeToReference(
             this string reference,
             ILifeTime lifeTime,
             bool downloadDependencies = false,
@@ -1375,10 +1365,11 @@
                 lifeTime,
                 lifeTime.Token, 
                 downloadDependencies, progress);
+            
             return loadResult;
         }
 
-        private static async UniTask<AddressableLoadState> LoadReferenceAsync<T>(
+        private static async UniTask<AddressableLoadResult> LoadReferenceAsync<T>(
             this string reference,
             ILifeTime lifeTime,
             CancellationToken token,
@@ -1386,8 +1377,10 @@
             IProgress<float> progress = null)
         {
             if (string.IsNullOrEmpty(reference))
-                return AddressableLoadState.FailedResult;
+                return AddressableLoadResult.FailedResult;
 
+            var result = new AddressableLoadResult();
+            
 #if !UNITY_WEBGL
             if (!Caching.ready)
             {
@@ -1409,7 +1402,7 @@
                         .SuppressCancellationThrow();
 
                     if (taskResult.IsCanceled)
-                        return AddressableLoadState.CancelledResult;
+                        return AddressableLoadResult.CancelledResult;
                 }
 
                 var resourceHandle = state.Handle;
@@ -1418,8 +1411,16 @@
                 //if result still valid when use existing result
                 if (isValidHandle && state is { Status: AddressableLoadStatus.Succeeded, Result: not null })
                 {
-                    resourceHandle.AddTo(lifeTime, true);
-                    return state;
+                    if(lifeTime!=null)
+                        resourceHandle.AddTo(lifeTime, true);
+                    
+                    result.Error = string.Empty;
+                    result.Success = true;
+                    result.Handle = resourceHandle;
+                    result.Result = resourceHandle.Result;
+                    result.IsInitial = false;
+                    
+                    return result;
                 }
             }
             else
@@ -1445,22 +1446,31 @@
             {
                 state.Task.TrySetCanceled();
                 state.Status = AddressableLoadStatus.Cancelled;
-                return state;
+                
+                return AddressableLoadResult.CancelledResult;
             }
 
             var handleStatus = handle.Status == AsyncOperationStatus.Succeeded
                 ? AddressableLoadStatus.Succeeded
                 : AddressableLoadStatus.Failed;
 
-            state.Status = handleStatus;
-            state.Result = loadResult.Result;
-
-            if (handleStatus == AddressableLoadStatus.Succeeded)
+            if (handleStatus == AddressableLoadStatus.Succeeded && lifeTime!=null)
                 handle.AddTo(lifeTime);
             
+            state.Status = handleStatus;
+            state.Result = loadResult.Result;
             state.Task.TrySetResult(state);
+            
+            if(handleStatus != AddressableLoadStatus.Succeeded)
+                return AddressableLoadResult.FailedResult;
 
-            return state;
+            result.Error = string.Empty;
+            result.Success = true;
+            result.Handle = handle;
+            result.Result = handle.Result;
+            result.IsInitial = true;
+            
+            return result;
         }
 
 
@@ -1580,6 +1590,34 @@
         Cancelled,
     }
 
+    public struct AddressableLoadResult
+    {
+        public const string FailedMessage = "Failed to load asset";
+        public const string CancelledMessage = "cancelled to load asset";
+
+        public static readonly AddressableLoadResult FailedResult = new()
+        {
+            Handle = default,
+            Result = default,
+            Success = false,
+            Error = FailedMessage,
+        };
+        
+        public static readonly AddressableLoadResult CancelledResult = new()
+        {
+            Handle = default,
+            Result = default,
+            Success = false,
+            Error = CancelledMessage,
+        };
+
+        public AsyncOperationHandle Handle;
+        public object Result;
+        public bool Success;
+        public string Error;
+        public bool IsInitial;
+    }
+    
 
     public struct AddressableLoadResult<T>
     {
@@ -1593,18 +1631,11 @@
             Error = FailedMessage,
         };
 
-        public static readonly AddressableLoadResult<T> CompleteResourceResult = new()
-        {
-            Handle = default,
-            Result = default,
-            Success = true,
-            Error = string.Empty,
-        };
-
         public AsyncOperationHandle Handle;
         public T Result;
         public bool Success;
         public string Error;
+        public bool IsInitial;
     }
 
     public struct AddressableHandleReference<T>
