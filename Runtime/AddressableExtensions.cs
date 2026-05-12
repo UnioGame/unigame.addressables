@@ -1369,7 +1369,7 @@
             return loadResult;
         }
 
-        private static async UniTask<AddressableLoadResult> LoadReferenceAsync<T>(
+        public static async UniTask<AddressableLoadResult> LoadReferenceAsync<T>(
             this string reference,
             ILifeTime lifeTime,
             CancellationToken token,
@@ -1383,10 +1383,9 @@
             
 #if !UNITY_WEBGL
             if (!Caching.ready)
-            {
                 await WaitWhileCachingReadyAsync(token);
-            }
 #endif
+            
             if (downloadDependencies)
                 await DownloadDependenciesTaskAsync(reference,lifeTime,token, true, progress);
 
