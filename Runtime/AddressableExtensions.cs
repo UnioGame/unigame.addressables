@@ -704,21 +704,24 @@
 
             var asset = default(Object);
 
+            var innerLifeTime = lifeTime == null ? new LifeTime() : null;
+            var loadLifeTime = lifeTime ?? innerLifeTime;
+            
             var result = await LoadAssetReferenceAsync<T>(
                 reference,
-                lifeTime,
+                loadLifeTime,
                 downloadDependencies,
                 token,
                 progress);
-
-            if (!result.Success)
+            
+            asset = result.Result;
+            
+            if (!result.Success || asset == null)
             {
-                GameLog.LogError(
-                    $"[SpawnObjectAsync<T>] {typeof(T).Name} AssetReference {reference} load error {result.Error}");
+                innerLifeTime?.Terminate();
+                GameLog.LogError($"[SpawnObjectAsync<T>] {typeof(T).Name} AssetReference {reference} load error {result.Error}");
                 return default;
             }
-
-            asset = result.Result;
 
             Object targetObject = null;
             GameObject gameObjectInstance = null;
@@ -760,9 +763,9 @@
             
             if (gameObjectInstance != null)
             {
-                var incrementCounter = !(lifeTime == null && result.IsInitial);
                 var assetLifeTime = gameObjectInstance.GetAssetLifeTime();
-                result.Handle.AddTo(assetLifeTime, incrementCounter);
+                innerLifeTime?.AddTo(assetLifeTime);
+                result.Handle.AddTo(assetLifeTime, true);
             }
 
             return targetObject as T;
@@ -1406,13 +1409,13 @@
 
                 var resourceHandle = state.Handle;
                 var isValidHandle = resourceHandle.IsValid();
-
+                var asset = isValidHandle ? resourceHandle.Result as Object : null;
+                var isValid = isValidHandle && state.Status == AddressableLoadStatus.Succeeded && asset != null;
+                
                 //if result still valid when use existing result
-                if (isValidHandle && state is { Status: AddressableLoadStatus.Succeeded, Result: not null })
+                if (isValid)
                 {
-                    if(lifeTime!=null)
-                        resourceHandle.AddTo(lifeTime, true);
-                    
+                    resourceHandle.AddTo(lifeTime, true);
                     result.Error = string.Empty;
                     result.Success = true;
                     result.Handle = resourceHandle;
@@ -1422,14 +1425,12 @@
                     return result;
                 }
             }
-            else
+           
+            _assetTaskCache[reference] = new AddressableLoadState()
             {
-                _assetTaskCache[reference] = new AddressableLoadState()
-                {
-                    Status = AddressableLoadStatus.None,
-                    Result = null,
-                };
-            }
+                Status = AddressableLoadStatus.None,
+                Result = null,
+            };
 
             state = _assetTaskCache[reference];
             state.Task?.TrySetCanceled();
@@ -1452,19 +1453,21 @@
             var handleStatus = handle.Status == AsyncOperationStatus.Succeeded
                 ? AddressableLoadStatus.Succeeded
                 : AddressableLoadStatus.Failed;
-
-            if (handleStatus == AddressableLoadStatus.Succeeded && lifeTime!=null)
-                handle.AddTo(lifeTime);
+            
+            var handleAsset = handle.Result as Object;
             
             state.Status = handleStatus;
             state.Result = loadResult.Result;
             state.Task.TrySetResult(state);
             
-            if(handleStatus != AddressableLoadStatus.Succeeded)
-                return AddressableLoadResult.FailedResult;
+            var valid = handleAsset != null && handleStatus == AddressableLoadStatus.Succeeded;
+            
+            if(!valid) return AddressableLoadResult.FailedResult;
 
+            handle.AddTo(lifeTime);
+            
             result.Error = string.Empty;
-            result.Success = true;
+            result.Success = handleAsset != null;
             result.Handle = handle;
             result.Result = handle.Result;
             result.IsInitial = true;
