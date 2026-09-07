@@ -1,4 +1,4 @@
-﻿namespace UniGame.AddressableTools.Runtime
+namespace UniGame.AddressableTools.Runtime
 {
     using System;
     using System.Collections;
@@ -1163,6 +1163,29 @@
             return result as T;
         }
 
+        public static async UniTask<T> LoadAssetInstanceTaskAsync<T>(
+            this AssetReferenceT<T> assetReference,
+            ILifeTime lifeTime,
+            bool downloadDependencies = false,
+            Action<T> onComplete = null) where T : Object
+        {
+            var asset = await assetReference.LoadAssetTaskAsync(lifeTime, downloadDependencies);
+            var instance = asset == null ? null : Object.Instantiate(asset);
+            onComplete?.Invoke(instance);
+            return instance;
+        }
+
+        public static async UniTask<T> LoadAssetInstanceTaskAsync<T>(
+            this AssetReference assetReference,
+            ILifeTime lifeTime,
+            bool downloadDependencies = false,
+            Action<T> onComplete = null) where T : Object
+        {
+            var asset = await assetReference.AssetGUID.LoadAssetTaskAsync<T>(lifeTime, downloadDependencies);
+            var instance = asset == null ? null : Object.Instantiate(asset);
+            onComplete?.Invoke(instance);
+            return instance;
+        }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static async UniTask<T> LoadAssetTaskAsync<T>(this AssetReferenceT<T> assetReference,
             ILifeTime lifeTime,

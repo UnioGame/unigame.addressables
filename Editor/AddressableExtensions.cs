@@ -47,7 +47,7 @@ namespace UniGame.AddressableTools.Editor
         public static HashSet<string> GetAddressableLabels(this Object source)
         {
             var entry = source.GetAddressableAssetEntry();
-            return entry?.labels;
+            return entry == null ? null : new HashSet<string>(entry.labels);
         }
 
         public static void AddAddressableAssetLabel(this Object source, string label)
@@ -112,7 +112,7 @@ namespace UniGame.AddressableTools.Editor
                 return null;
 
             var entry = source.GetAddressableAssetEntry();
-            return entry?.labels;
+            return entry == null ? null : new HashSet<string>(entry.labels);
         }
 
         public static string GetAddressableAssetPath(this Object source)
