@@ -36,7 +36,8 @@
             {
                 var activeLocation = locationService.ActiveRemoteLocation;
                 var foundLocation = remotes
-                    .FirstOrDefault(x => x.remoteUrl.Equals(activeLocation.remoteUrl));
+                    .FirstOrDefault(x => x.enabled &&
+                        string.Equals(x.remoteUrl, activeLocation.remoteUrl, System.StringComparison.OrdinalIgnoreCase));
                 if (foundLocation == null)
                     locationService.Remove(activeLocation);
             }
@@ -79,4 +80,4 @@
     }
     
     
-}   
+}
