@@ -1226,7 +1226,7 @@
                 Result = resultValue,
                 Success = loadResult.Success,
                 IsInitial = loadResult.IsInitial,
-                Error = string.Empty,
+                Error = loadResult.Error,
             };
 
             return result;
