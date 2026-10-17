@@ -24,9 +24,12 @@
         private string _catalogUrl = string.Empty;
         
         private AddressableRemoteValue _activeLocation;
+        private Func<IResourceLocation, string> _previousTransform;
+        private Func<IResourceLocation, string> _installedTransform;
+        private bool _isDisposed;
         
         private Dictionary<string,AddressableRemoteValue> _remoteLocations = new();
-        private Dictionary<IResourceLocation,string> _transformCache = new();
+        private Dictionary<string,string> _transformCache = new();
 
         public AddressableLocationService()
         {
@@ -77,6 +80,7 @@
         {
             if (remote.enabled == false) return;
             _remoteLocations[remote.remoteUrl] = remote;
+            _transformCache.Clear();
         }
         
         public bool Remove(AddressableRemoteValue remote)
@@ -134,6 +138,7 @@
         
         public async UniTask<AddressableRemoteResult> ActivateRemoteLocationAsync(AddressableRemoteValue remoteLocation)
         {
+            ThrowIfDisposed();
             var result = new AddressableRemoteResult()
             {
                 success = false,
@@ -152,7 +157,8 @@
 
             var remoteUrl = location.remoteUrl;
             
-            if (remoteUrl.Equals(_activeRemoteUrl, StringComparison.InvariantCultureIgnoreCase))
+            if (_isRemoteLocationActive &&
+                remoteUrl.Equals(_activeRemoteUrl, StringComparison.InvariantCultureIgnoreCase))
             {
                 result.success = true;
                 return result;
@@ -164,6 +170,7 @@
                 : $"{remoteUrl.TrimEnd('/')}/{catalog.TrimStart('/')}";
             
             var resourceLocator = await Addressables.InitializeAsync().ToUniTask();
+            ThrowIfDisposed();
             
             if (string.IsNullOrEmpty(catalogUrl) == false)
             {
@@ -172,6 +179,7 @@
                 var catalogResult = await Addressables
                     .LoadContentCatalogAsync(catalogUrl)
                     .ToUniTask();
+                ThrowIfDisposed();
 
                 if (catalogResult == null)
                 {
@@ -191,17 +199,13 @@
                 if (!IsAssetDatabase)
                     await Addressables.CleanBundleCache();
             }
+            ThrowIfDisposed();
             
             _activeLocation = location;
             _activeRemoteUrl = remoteUrl;
             _catalogUrl = catalogUrl;
             
-            if (_isRemoteLocationActive == false)
-            {
-                Addressables.ResourceManager.InternalIdTransformFunc = null;
-                Addressables.ResourceManager.InternalIdTransformFunc = TransformInternalId;
-                _isRemoteLocationActive = true;
-            }
+            InstallTransform();
 
             result.url = remoteUrl;
             result.success = true;
@@ -237,60 +241,73 @@
         /// <returns>is location should be updated</returns>
         public bool ValidateTransform(IResourceLocation location)
         {
-            if (_isRemoteLocationActive == false || _isEnabled == false)
-                return false;
-
-            if (string.IsNullOrEmpty(_activeRemoteUrl)) return false;
-            
-            var internalId = location.InternalId;
-            if (string.IsNullOrEmpty(internalId)) return false;
-            
-            if (internalId.Contains(_activeRemoteUrl, StringComparison.OrdinalIgnoreCase))
-                return true;
-
-            return false;
+            var internalId = _previousTransform?.Invoke(location) ?? location.InternalId;
+            return TryGetRemotePrefix(internalId, out _);
         }
         
         public string TransformInternalId(IResourceLocation location)
         {
-            var internalId = location.InternalId;
-            
-            var validationResult = ValidateTransform(location);
-            if (!validationResult) return location.InternalId;
-            
-            //is we already transformed this location -  return cached id
-            if(_transformCache.TryGetValue(location, out var cachedId))
+            // PAD paths change after delivery and must be resolved on every request.
+            var internalId = _previousTransform?.Invoke(location) ?? location.InternalId;
+            if (!TryGetRemotePrefix(internalId, out var prefix)) return internalId;
+
+            if(_transformCache.TryGetValue(internalId, out var cachedId))
                 return cachedId;
 
-            var resultId = internalId;
-            var replaced = false;
-            
-            foreach (var locationPair in _remoteLocations)
+            var resultId = _activeRemoteUrl.TrimEnd('/') + internalId.Substring(prefix.Length);
+            _transformCache[internalId] = resultId;
+            return resultId;
+        }
+
+        private bool TryGetRemotePrefix(string internalId, out string prefix)
+        {
+            prefix = null;
+            if (!_isRemoteLocationActive || !_isEnabled || _isDisposed ||
+                string.IsNullOrEmpty(_activeRemoteUrl) || !IsHttpUrl(internalId)) return false;
+
+            // Prefer the most specific configured base URL; never match inside a query or hostname.
+            foreach (var remote in _remoteLocations.Values)
             {
-                var key = locationPair.Key;
-                var locationValue = locationPair.Value;
-                if(!locationValue.enabled) continue;
-                
-                if(!internalId.Contains(key,StringComparison.InvariantCultureIgnoreCase))    
-                    continue;
-                
-                resultId = internalId.Replace(key,_activeRemoteUrl);
-                break;
+                if (!remote.enabled || !IsHttpUrl(remote.remoteUrl)) continue;
+                var candidate = remote.remoteUrl.TrimEnd('/');
+                if (!internalId.StartsWith(candidate, StringComparison.OrdinalIgnoreCase)) continue;
+                if (internalId.Length > candidate.Length &&
+                    internalId[candidate.Length] != '/' && internalId[candidate.Length] != '?' &&
+                    internalId[candidate.Length] != '#') continue;
+                if (prefix == null || candidate.Length > prefix.Length) prefix = candidate;
             }
-            
-            //add into cache
-            _transformCache[location] = resultId;
-            return resultId; // Return the original ID if no replacement is needed
+            return prefix != null;
+        }
+
+        private static bool IsHttpUrl(string value) =>
+            Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+            (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
+        private void InstallTransform()
+        {
+            ThrowIfDisposed();
+            if (_isRemoteLocationActive) return;
+            _previousTransform = Addressables.ResourceManager.InternalIdTransformFunc;
+            _installedTransform = TransformInternalId;
+            Addressables.ResourceManager.InternalIdTransformFunc = _installedTransform;
+            _isRemoteLocationActive = true;
+        }
+
+        private void ThrowIfDisposed()
+        {
+            if (_isDisposed) throw new ObjectDisposedException(nameof(AddressableLocationService));
         }
 
         public void Dispose()
         {
-            if (_isRemoteLocationActive == false)
-            {
-                Addressables.ResourceManager.InternalIdTransformFunc = null;
-            }
+            if (_isDisposed) return;
+            if (_isRemoteLocationActive &&
+                ReferenceEquals(Addressables.ResourceManager.InternalIdTransformFunc, _installedTransform))
+                Addressables.ResourceManager.InternalIdTransformFunc = _previousTransform;
             
             _isRemoteLocationActive = false;
+            _isDisposed = true;
+            // Keep the previous delegate for later handlers that captured this one.
             _transformCache.Clear();
             _remoteLocations.Clear();
         }
