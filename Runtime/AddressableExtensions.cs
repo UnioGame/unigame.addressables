@@ -1460,6 +1460,16 @@ namespace UniGame.AddressableTools.Runtime
             state.Task = new UniTaskCompletionSource<AddressableLoadState>();
             var handle = Addressables.LoadAssetAsync<T>(reference);
             state.Handle = handle;
+            // Released Unity assets can still carry managed data (for example parsed Spine animations).
+            // Evict only when Addressables releases the last handle owner, not when one lifetime ends.
+            handle.Destroyed += _ =>
+            {
+                if (_assetTaskCache.TryGetValue(reference, out var cachedState) &&
+                    ReferenceEquals(cachedState, state))
+                {
+                    _assetTaskCache.Remove(reference);
+                }
+            };
 
             var loadResult = await handle
                 .ToUniTask(progress, PlayerLoopTiming.Update, token, autoReleaseWhenCanceled: true)
