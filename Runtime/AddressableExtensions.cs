@@ -1359,7 +1359,8 @@ namespace UniGame.AddressableTools.Runtime
 
             var guid = reference.AssetGUID;
 
-            if (_assetTaskCache.TryGetValue(guid, out var state) && state.Handle.IsValid())
+            if (_assetTaskCache.TryGetValue(guid, out var state) &&
+                state.Status == AddressableLoadStatus.Succeeded && state.Handle.IsValid())
             {
                 state.Handle.AddTo(lifeTime, true);
                 return new AddressableLoadResult()
@@ -1395,6 +1396,14 @@ namespace UniGame.AddressableTools.Runtime
             return loadResult;
         }
 
+        /// <summary>
+        /// Loads <paramref name="reference"/> once per address and binds one handle reference to <paramref name="lifeTime"/>.
+        /// Contract (ADDR-03):
+        /// the first caller owns the load, later callers wait on it; a caller's own cancellation only cancels that caller
+        /// (the others take the load over); a failed or cancelled load leaves no handle and no cache entry behind, so a retry
+        /// of the same address starts a fresh load; a result that arrives after its requester was cancelled or terminated is
+        /// released exactly once and never delivered.
+        /// </summary>
         public static async UniTask<AddressableLoadResult> LoadReferenceAsync<T>(
             this string reference,
             ILifeTime lifeTime,
@@ -1405,96 +1414,148 @@ namespace UniGame.AddressableTools.Runtime
             if (string.IsNullOrEmpty(reference))
                 return AddressableLoadResult.FailedResult;
 
-            var result = new AddressableLoadResult();
-            
+            if (IsRequesterGone(lifeTime, token))
+                return AddressableLoadResult.CancelledResult;
+
 #if !UNITY_WEBGL
             if (!Caching.ready)
                 await WaitWhileCachingReadyAsync(token);
 #endif
-            
+
             if (downloadDependencies)
-                await DownloadDependenciesTaskAsync(reference,lifeTime,token, true, progress);
+                await DownloadDependenciesTaskAsync(reference, lifeTime, token, true, progress);
 
-            if (_assetTaskCache.TryGetValue(reference, out var state))
+            while (true)
             {
-                var status = state.Status;
-                var cachedTask = state.Task;
+                if (IsRequesterGone(lifeTime, token))
+                    return AddressableLoadResult.CancelledResult;
 
-                if (status != AddressableLoadStatus.Succeeded)
+                if (!_assetTaskCache.TryGetValue(reference, out var cached))
+                    break;
+
+                if (cached.Status == AddressableLoadStatus.Loading)
                 {
-                    var taskResult = await cachedTask.Task
+                    //another requester owns the load: wait for it, cancelling only this wait
+                    var waited = await cached.Task.Task
                         .AttachExternalCancellation(token)
                         .SuppressCancellationThrow();
 
-                    if (taskResult.IsCanceled)
+                    if (waited.IsCanceled)
                         return AddressableLoadResult.CancelledResult;
+
+                    //the owner failed: share its failure instead of repeating the load once per waiter
+                    if (cached.Status == AddressableLoadStatus.Failed)
+                        return AddressableLoadResult.FailedResult;
+
+                    //succeeded: reuse below; cancelled: the entry is gone and this requester takes the load over
+                    continue;
                 }
 
-                var resourceHandle = state.Handle;
-                var isValidHandle = resourceHandle.IsValid();
-                var asset = isValidHandle ? resourceHandle.Result as Object : null;
-                var isValid = isValidHandle && state.Status == AddressableLoadStatus.Succeeded && asset != null;
-                
-                //if result still valid when use existing result
-                if (isValid)
+                if (cached.Status == AddressableLoadStatus.Succeeded)
                 {
-                    resourceHandle.AddTo(lifeTime, true);
-                    result.Error = string.Empty;
-                    result.Success = true;
-                    result.Handle = resourceHandle;
-                    result.Result = resourceHandle.Result;
-                    result.IsInitial = false;
-                    
-                    return result;
+                    var cachedHandle = cached.Handle;
+                    var cachedAsset = cachedHandle.IsValid() ? cachedHandle.Result as Object : null;
+                    if (cachedAsset != null)
+                    {
+                        cachedHandle.AddTo(lifeTime, true);
+
+                        return new AddressableLoadResult
+                        {
+                            Error = string.Empty,
+                            Success = true,
+                            Handle = cachedHandle,
+                            Result = cachedHandle.Result,
+                            IsInitial = false,
+                        };
+                    }
                 }
+
+                //stale entry (failed, cancelled or released handle): replace it with a fresh load
+                RemoveCacheEntry(reference, cached);
+                break;
             }
-           
-            _assetTaskCache[reference] = new AddressableLoadState()
+
+            var state = new AddressableLoadState
             {
-                Status = AddressableLoadStatus.None,
-                Result = null,
+                Status = AddressableLoadStatus.Loading,
+                Task = new UniTaskCompletionSource<AddressableLoadState>(),
             };
+            _assetTaskCache[reference] = state;
 
-            state = _assetTaskCache[reference];
-            state.Task?.TrySetCanceled();
-            state.Task = new UniTaskCompletionSource<AddressableLoadState>();
-            var handle = Addressables.LoadAssetAsync<T>(reference);
-            state.Handle = handle;
-
-            var loadResult = await handle
-                .ToUniTask(progress, PlayerLoopTiming.Update, token, autoReleaseWhenCanceled: true)
-                .SuppressCancellationThrow();
-
-            if (loadResult.IsCanceled)
+            AsyncOperationHandle<T> handle = default;
+            try
             {
-                state.Task.TrySetCanceled();
-                state.Status = AddressableLoadStatus.Cancelled;
-                
-                return AddressableLoadResult.CancelledResult;
+                handle = AddressableLoadStarter<T>.Start(reference);
+                state.Handle = handle;
+
+                //on cancellation the handle is released by ToUniTask: it is not released again here
+                var loadResult = await handle
+                    .ToUniTask(progress, PlayerLoopTiming.Update, token, autoReleaseWhenCanceled: true)
+                    .SuppressCancellationThrow();
+
+                if (loadResult.IsCanceled)
+                    return FinishLoad(reference, state, AddressableLoadStatus.Cancelled, AddressableLoadResult.CancelledResult);
+            }
+            catch (Exception exception)
+            {
+                if (handle.IsValid())
+                    Addressables.Release(handle);
+
+                GameLog.LogError($"AddressableExtensions: load '{reference}' failed: {exception.Message}");
+                return FinishLoad(reference, state, AddressableLoadStatus.Failed, AddressableLoadResult.FailedResult);
             }
 
-            var handleStatus = handle.Status == AsyncOperationStatus.Succeeded
-                ? AddressableLoadStatus.Succeeded
-                : AddressableLoadStatus.Failed;
-            
-            var handleAsset = handle.Result as Object;
-            
-            state.Status = handleStatus;
-            state.Result = loadResult.Result;
-            state.Task.TrySetResult(state);
-            
-            var valid = handleAsset != null && handleStatus == AddressableLoadStatus.Succeeded;
-            
-            if(!valid) return AddressableLoadResult.FailedResult;
+            var loadedAsset = handle.IsValid() ? handle.Result as Object : null;
+            if (loadedAsset == null || handle.Status != AsyncOperationStatus.Succeeded)
+            {
+                if (handle.IsValid())
+                    Addressables.Release(handle);
+
+                return FinishLoad(reference, state, AddressableLoadStatus.Failed, AddressableLoadResult.FailedResult);
+            }
+
+            //late result: the requester was cancelled or terminated while the handle completed
+            if (IsRequesterGone(lifeTime, token))
+            {
+                Addressables.Release(handle);
+                return FinishLoad(reference, state, AddressableLoadStatus.Cancelled, AddressableLoadResult.CancelledResult);
+            }
 
             handle.AddTo(lifeTime);
-            
-            result.Error = string.Empty;
-            result.Success = handleAsset != null;
-            result.Handle = handle;
-            result.Result = handle.Result;
-            result.IsInitial = true;
-            
+            state.Result = handle.Result;
+            state.Status = AddressableLoadStatus.Succeeded;
+            state.Task.TrySetResult(state);
+
+            return new AddressableLoadResult
+            {
+                Error = string.Empty,
+                Success = true,
+                Handle = handle,
+                Result = handle.Result,
+                IsInitial = true,
+            };
+        }
+
+        private static bool IsRequesterGone(ILifeTime lifeTime, CancellationToken token)
+        {
+            return token.IsCancellationRequested || (lifeTime != null && lifeTime.IsTerminated);
+        }
+
+        private static void RemoveCacheEntry(string reference, AddressableLoadState state)
+        {
+            if (_assetTaskCache.TryGetValue(reference, out var current) && ReferenceEquals(current, state))
+                _assetTaskCache.Remove(reference);
+        }
+
+        private static AddressableLoadResult FinishLoad(
+            string reference,
+            AddressableLoadState state,
+            AddressableLoadStatus status,
+            AddressableLoadResult result)
+        {
+            state.Status = status;
+            RemoveCacheEntry(reference, state);
+            state.Task.TrySetResult(state);
             return result;
         }
 
